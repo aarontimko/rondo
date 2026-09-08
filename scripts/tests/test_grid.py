@@ -1,4 +1,4 @@
-"""Grid format: parsing, emitting, and the melody_v2 round trip."""
+"""Grid format: parsing, emitting, and the worked-example round trip."""
 
 import sys
 import unittest
@@ -10,28 +10,23 @@ from rondo.grid import (  # noqa: E402
     GridError, Note, emit, note_name, parse, parse_notes, parse_token, to_qn,
 )
 
-MELODY_V2 = """\
-Aaron's melody, 8 bars over A2 (bars 9-16).
+EXAMPLE = """\
+Example melody, four bars.
 Ef = E flat, Cs = C sharp, / = rest, s = hold previous note (across bar lines too).
 
         1  &  2  &  3  &  4  &
-bar 1:  G  E  /  E  Ef E  Ef E
-bar 2:  D  s  C  s  s  s  Ef E
-bar 3:  D  s  C  s  s  s  s  D
-bar 4:  /  C  s  s  s  s  /  /
-bar 5:  /  Cs D  s  s  s  s  s
-bar 6:  s  s  s  s  Ef E  /  F
-bar 7:  s  D  s  s  s  s  s  s
-bar 8:  s  s  s  s  E  s  F  s
+bar 1:  C  D  E  s  G  s  /  E
+bar 2:  D  s  s  s  C  s  s  s
+bar 3:  s  s  E  F  G  s  Bf s
+bar 4:  A  s  /  Cs D  s  s  s
 """
 
-# From z_ignore/spike/melody_v2.lua, written to Reaper on 2026-09-07.
-MELODY_V2_NOTES = [
-    (0, 1, 67), (1, 1, 64), (3, 1, 64), (4, 1, 63), (5, 1, 64), (6, 1, 63),
-    (7, 1, 64), (8, 2, 62), (10, 4, 60), (14, 1, 63), (15, 1, 64),
-    (16, 2, 62), (18, 5, 60), (23, 1, 62), (25, 5, 60), (33, 1, 61),
-    (34, 10, 62), (44, 1, 63), (45, 1, 64), (47, 2, 65), (49, 11, 62),
-    (60, 2, 64), (62, 2, 65),
+# Worked out by hand from the grid above.
+EXAMPLE_NOTES = [
+    (0, 1, 60), (1, 1, 62), (2, 2, 64), (4, 2, 67), (7, 1, 64),
+    (8, 4, 62), (12, 6, 60),
+    (18, 1, 64), (19, 1, 65), (20, 2, 67), (22, 2, 70),
+    (24, 2, 69), (27, 1, 61), (28, 4, 62),
 ]
 
 
@@ -169,33 +164,33 @@ class TestEmit(unittest.TestCase):
         self.assertIn("bar 1:", emit([]))
 
 
-class TestMelodyV2(unittest.TestCase):
-    def test_parses_to_the_notes_that_were_written_to_reaper(self):
-        notes, spb = parse(MELODY_V2)
+class TestWorkedExample(unittest.TestCase):
+    def test_parses_to_the_hand_worked_notes(self):
+        notes, spb = parse(EXAMPLE)
         self.assertEqual(spb, 8)
-        self.assertEqual([tuple(n) for n in notes], MELODY_V2_NOTES)
+        self.assertEqual([tuple(n) for n in notes], EXAMPLE_NOTES)
 
     def test_round_trips_through_emit(self):
-        notes, spb = parse(MELODY_V2)
+        notes, spb = parse(EXAMPLE)
         again, spb2 = parse(emit(notes, spb))
         self.assertEqual(spb2, spb)
         self.assertEqual(again, notes)
 
     def test_emitted_text_matches_the_source_bar_lines(self):
         """Byte-identical apart from enharmonics: Cs (61) is emitted as Df."""
-        notes, spb = parse(MELODY_V2)
+        notes, spb = parse(EXAMPLE)
         emitted = [l for l in emit(notes, spb).splitlines() if l.startswith("bar ")]
-        source = [l for l in MELODY_V2.splitlines() if l.startswith("bar ")]
+        source = [l for l in EXAMPLE.splitlines() if l.startswith("bar ")]
         self.assertEqual(len(emitted), len(source))
         for e, s in zip(emitted, source):
             self.assertEqual(e.rstrip(), s.replace("Cs", "Df").rstrip())
 
     def test_to_qn(self):
-        notes, spb = parse(MELODY_V2)
+        notes, spb = parse(EXAMPLE)
         qn = to_qn(notes, spb)
-        self.assertEqual(qn[0], (0.0, 0.5, 67))
-        self.assertEqual(qn[7], (4.0, 1.0, 62))       # bar 2 beat 1, a half note
-        self.assertAlmostEqual(qn[-1][0], 31.0)       # bar 8, beat 4 &
+        self.assertEqual(qn[0], (0.0, 0.5, 60))
+        self.assertEqual(qn[5], (4.0, 2.0, 62))       # bar 2 beat 1, a half note
+        self.assertAlmostEqual(qn[-1][0], 14.0)       # bar 4, beat 3
 
 
 if __name__ == "__main__":

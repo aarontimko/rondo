@@ -69,22 +69,17 @@ drum patterns -- anything the monophonic grid cannot express.
 
 ## Worked example
 
-This is Aaron's melody as written on 2026-09-07 (`melody_v2`), eight bars over
-the second A section:
+A four-bar example that uses every token type:
 
 ```
         1  &  2  &  3  &  4  &
-bar 1:  G  E  /  E  Ef E  Ef E
-bar 2:  D  s  C  s  s  s  Ef E
-bar 3:  D  s  C  s  s  s  s  D
-bar 4:  /  C  s  s  s  s  /  /
-bar 5:  /  Cs D  s  s  s  s  s
-bar 6:  s  s  s  s  Ef E  /  F
-bar 7:  s  D  s  s  s  s  s  s
-bar 8:  s  s  s  s  E  s  F  s
+bar 1:  C  D  E  s  G  s  /  E
+bar 2:  D  s  s  s  C  s  s  s
+bar 3:  s  s  E  F  G  s  Bf s
+bar 4:  A  s  /  Cs D  s  s  s
 ```
 
-It parses to 23 notes. The long ones are holds running across bar lines: the D
-that starts in bar 5 slot 34 runs ten slots into bar 6, and the D in bar 7 runs
-eleven slots into bar 8. `scripts/tests/test_grid.py` pins this example against
-the note list that was actually written into Reaper.
+It parses to 14 notes. The C that starts on beat 3 of bar 2 is a hold running
+across the bar line: six slots, ending on beat 2 of bar 3. `scripts/tests/test_grid.py`
+pins this example against a hand-worked note list and round-trips it through
+the emitter.

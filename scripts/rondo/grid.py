@@ -41,7 +41,7 @@ _C0 = 12  # MIDI number of C0, i.e. octave -1 is 0..11
 _LETTER = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 
 #: How ``notes_to_grid`` spells the black keys. Matches the flats used in the
-#: hand-written examples (``Ef``); ``Cs`` in melody_v2 is the same pitch as
+#: hand-written examples (``Ef``); ``Cs`` in a hand-written grid is the same pitch as
 #: ``Df``, so text round-trips are enharmonic, not byte-identical.
 _SPELL_FLAT = {0: "C", 1: "Df", 2: "D", 3: "Ef", 4: "E", 5: "F",
                6: "Gf", 7: "G", 8: "Af", 9: "A", 10: "Bf", 11: "B"}

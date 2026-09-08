@@ -6,7 +6,7 @@ Pad")`` cannot find anything. ``TrackFX_SetPreset`` also accepts a *path* to a
 ``.vstpreset``, and that route works. So: read the factory ``.fxp``, wrap its
 payload as a VST3 preset, hand Reaper the path.
 
-Byte layout (verified against ``z_ignore/spike/bellpad.vstpreset``)::
+Byte layout (verified against a preset produced by this builder and loaded in Reaper)::
 
     offset 0   'VST3'
     offset 4   int32  1                       (version)
