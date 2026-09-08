@@ -13,4 +13,4 @@ Rule of thumb: reads that fit the bridge go through the bridge; everything
 structural goes through Lua.
 """
 
-__all__ = ["reaper", "grid", "surge_preset"]
+__all__ = ["reaper", "grid", "surge_preset", "tracks"]

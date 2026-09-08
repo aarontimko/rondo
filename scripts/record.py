@@ -14,15 +14,14 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rondo import _cli, reaper  # noqa: E402
+from rondo import _cli, reaper, tracks  # noqa: E402
 
-# I_RECINPUT encodes the input:
-#   audio mono input n      -> n           (0 = first hardware input)
-#   MIDI device d, chan c   -> 4096 + (d << 5) + c   (c = 0 means "all")
-# Reaper's own Virtual MIDI Keyboard is device 62, so 4096 + (62<<5) = 6080.
-# The VKB's octave is the "Center note" control in its window; there is no
-# action for it, so a human sets that by hand.
-SOURCES = {"mic": 0, "keyboard": 6080}
+# The I_RECINPUT encoding lives in rondo/tracks.py. "none" is a real input
+# setting (track.py set-input none), but arming a track for nothing is not a
+# recording setup, so it is not offered here.
+# The virtual keyboard's octave is the "Center note" control in its window;
+# there is no action for it, so a human sets that by hand.
+SOURCES = {k: v for k, v in tracks.REC_INPUTS.items() if v >= 0}
 
 LUA = r"""
 local NAME, SOURCE, MONITOR, ARM = %(name)s, %(source)s, %(monitor)s, %(arm)s

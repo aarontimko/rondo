@@ -310,6 +310,18 @@ def bars_to_qn(bar: int, beat: float = 1.0) -> float:
     return (bar - 1) * 4.0 + (beat - 1.0)
 
 
+def bar_span_qn(first: int, last: int) -> tuple[float, float]:
+    """Inclusive bar range -> the half-open quarter-note span that covers it.
+
+    ``bar_span_qn(1, 8)`` is ``(0.0, 32.0)``: bars 1..8, ending where bar 9
+    begins. Every rondo CLI's ``--from``/``--to`` is inclusive, so this is the
+    one place the ``+ 1`` lives.
+    """
+    if last < first:
+        raise ValueError(f"--to ({last}) is before --from ({first})")
+    return bars_to_qn(first), bars_to_qn(last + 1)
+
+
 def qn_to_bars(qn: float) -> tuple[int, float]:
     """Inverse of ``bars_to_qn``. Assumes 4/4. Returns (bar, beat), both 1-based."""
     bar = int(qn // 4) + 1

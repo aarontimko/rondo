@@ -26,6 +26,11 @@ python scripts/write_notes.py --track Pad --bar 1 --grid pad.txt --replace
 python scripts/render.py --from 1 --to 8 --out /private/tmp/take.wav   # listen
 ```
 
+`track.py` and `project.py` are the small moves in between: `track.py show
+--track Pad`, `track.py mute --track 3`, `project.py region --name A --from 1
+--to 8`. `--track` takes a name (case-insensitive, exact then prefix) or a
+0-based index, and an ambiguous name is an error rather than a guess.
+
 Every script takes `--json` where machine output helps, and `--help` always
 tells the truth. Scripts act on the **active project tab**.
 
@@ -42,10 +47,12 @@ Unit tests: `python -m unittest discover -s scripts/tests`.
 | `scripts/hum_to_grid.py` | Transcribe a hummed or sung wav into rondo grid text you can feed to write-notes. | librosa |
 | `scripts/index.py` | List every rondo script from its docstring header as a markdown table; --check keeps AGENTS.md honest. | nothing |
 | `scripts/install_samples.py` | Download the drum one-shots named in samples/kit.json (CC0, from VCSL) into samples/. | network |
+| `scripts/project.py` | Project-wide moves: save, move the edit cursor, toggle the metronome, name a region or marker, set the tempo, list tabs. | reaper-running |
 | `scripts/record.py` | Arm a track for the mic or the virtual keyboard, set monitoring and the metronome, or disarm everything. | reaper-running |
 | `scripts/render.py` | Render a bar range or a named region to a 44.1k stereo wav, synchronously. | reaper-running |
 | `scripts/run_lua.py` | Run a ReaScript file or inline snippet inside the running Reaper and print its output. | reaper-running |
 | `scripts/status.py` | Read-only summary of the open Reaper project: tempo, tracks, FX, regions, cursor. | reaper-running |
+| `scripts/track.py` | One track at a time: mute, solo, arm, rename, add, delete, clear items, set the input, set the volume, or show its full state. | reaper-running |
 | `scripts/write_notes.py` | Write a melody from a grid text file (or JSON notes) onto a track at a bar. | reaper-running |
 <!-- /rondo:tasks -->
 

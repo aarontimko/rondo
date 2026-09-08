@@ -65,6 +65,52 @@ which also gives it free `O_EXCL` slot allocation.
 * Once a tab has a filename, `Main_SaveProject(0, false)` does clear the dirty
   flag (unlike `Main_SaveProjectEx` to a new path). That is the other way to
   close a scratch tab without a prompt.
+* On a tab with **no** filename, `Main_SaveProject` would open a Save As
+  dialog, so `project.py save` refuses and asks for `--as PATH` instead. The
+  full no-dialog recipe, verified end to end: `Main_SaveProjectEx(0, path, 0)`
+  writes the file, `Main_openProject("noprompt:" .. path)` then adopts it (the
+  path now exists, so the blank-the-tab trap above cannot fire), and from there
+  a plain save is silent and `Main_OnCommand(40860, 0)` closes without a
+  prompt.
+* `error(msg, 0)` raises without Lua's `body_xxx.lua:26:` prefix, so the
+  message `LuaError` carries reads like a CLI error instead of a traceback.
+  The new scripts use it; the older ones do not.
+
+## Track state
+
+`GetMediaTrackInfo_Value` / `SetMediaTrackInfo_Value` fields rondo relies on:
+
+| field | meaning |
+| --- | --- |
+| `B_MUTE` | 0/1 |
+| `I_SOLO` | 0 off, 1 solo, 2 solo in place |
+| `I_RECARM` | 0/1 |
+| `I_RECMON` | 0 off, 1 on, 2 auto |
+| `I_RECINPUT` | see Recording below; **-1 is "no input"** |
+| `D_VOL` | **linear** gain, not dB: unity is `1.0`, so `dB = 20*log10(vol)` |
+| `D_PAN` | -1.0 hard left .. 0 center .. 1.0 hard right |
+
+A track made with `InsertTrackAtIndex(n, true)` starts at `I_RECINPUT` 0 (the
+first audio input) with `I_RECMON` 1 (**monitoring on**), not off.
+
+Per-item detail: `TakeIsMIDI(GetActiveTake(item))` says whether an item is
+MIDI, and `select(2, MIDI_CountEvts(take))` is its note count.
+
+## Regions and markers
+
+`EnumProjectMarkers(i)` returns `(retval, isrgn, pos, rgnend, name,
+markrgnindexnumber)` and `retval == 0` ends the walk. `DeleteProjectMarker(0,
+idx, isrgn)` wants that **6th value, the display index number** -- not the
+enumeration position `i`. Deleting renumbers the enumeration, so restart the
+walk from 0 after each delete (`project.py region/marker` replaces by name
+this way).
+
+`SetCurrentBPM(0, bpm, true)` sets the project tempo; the new value reads back
+immediately from `select(3, TimeMap_GetTimeSigAtTime(0, 0))`.
+
+`SetEditCurPos(t, true, false)` moves the **edit** cursor and scrolls to it.
+The third argument is `seekplay`; keeping it false is what stops rondo from
+nudging the transport.
 
 ## Instruments
 
@@ -206,8 +252,14 @@ The virtual keyboard's octave is a **"Center note" control in its window**.
 There is no action for it -- a human sets it by hand.
 
 `Main_OnCommand(40364, 0)` toggles the metronome;
-`GetToggleCommandState(40364)` reads it. It is a global option, not project
-state.
+`GetToggleCommandState(40364)` reads it.
+
+**Correction, verified 2026-09:** this note used to say the metronome is a
+global option, not project state. It is **per project tab**. Turning it on in
+the active tab, opening a new tab (`40859`) and reading `40364` there gives 0;
+closing that tab and reading again in the original gives 1. So `record.py`'s
+and `project.py metronome`'s reading is about the tab you are in, and a scratch
+tab cannot leave the user's metronome flipped.
 
 ## Humming
 
