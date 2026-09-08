@@ -216,3 +216,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- rondo ---------------------------------------------------------------
+# Audio is never committed. Not renders, not samples, not takes.
+*.wav
+*.aif
+*.aiff
+*.flac
+*.mp3
+samples/*.wav
+render/
+
+# Scratch / private notes (also covered by a global ignore on this machine).
+z_ignore/

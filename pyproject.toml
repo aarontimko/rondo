@@ -1,0 +1,24 @@
+[project]
+name = "rondo"
+version = "0.1.0"
+description = "A small toolkit that lets an LLM drive the Reaper DAW."
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+# No required dependencies on purpose: everything in scripts/ is stdlib, so
+# `python scripts/status.py` works with no environment at all.
+dependencies = []
+
+[project.optional-dependencies]
+# Only scripts/hum_to_grid.py needs these.
+transcribe = ["librosa>=0.11", "soundfile"]
+
+[tool.setuptools]
+package-dir = { "" = "scripts" }
+
+[tool.setuptools.packages.find]
+where = ["scripts"]
+include = ["rondo*"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

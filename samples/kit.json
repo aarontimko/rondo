@@ -1,0 +1,59 @@
+{
+  "_readme": [
+    "A rondo drum kit: GM note number -> one-shot WAV, plus where to fetch it.",
+    "Audio is NEVER committed. scripts/install_samples.py downloads these into",
+    "samples/, which .gitignore excludes. build_kit.py reads the 'file' fields",
+    "and puts one ReaSamplOmatic5000 per note on a single track.",
+    "Source: sgossner/VCSL, CC0 1.0 (public domain), commit c1ea7bcc."
+  ],
+  "source": {
+    "repo": "https://github.com/sgossner/VCSL",
+    "commit": "c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e",
+    "license": "CC0-1.0",
+    "url_template": "https://raw.githubusercontent.com/sgossner/VCSL/{commit}/{path}"
+  },
+  "samples": {
+    "36": {
+      "name": "kick",
+      "file": "36_kick.wav",
+      "path": "Membranophones/Struck Membranophones/Bass Drum 2/bassdrum_hit_ff.wav",
+      "sha256": "d0ce17649553655127ee27dff312ece64c9ac698a9b66a470c3b51f244892c7b",
+      "bytes": 2198042
+    },
+    "38": {
+      "name": "snare",
+      "file": "38_snare.wav",
+      "path": "Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitNS_v2_rr1_Mid.wav",
+      "sha256": "445dfee4836b775d990f0aca47519b1c0bae8427a9eb9776866dc232fdb37aa2",
+      "bytes": 155408
+    },
+    "39": {
+      "name": "clap",
+      "file": "39_clap.wav",
+      "path": "Idiophones/Struck Idiophones/Claps/Clap_rr1.wav",
+      "sha256": "4c9f3fe4a34733b9be6ed9ce5e5aad48b19c1029ae9c6dd1b96294a847539e3f",
+      "bytes": 141974
+    },
+    "42": {
+      "name": "closed hat",
+      "file": "42_hatc.wav",
+      "path": "Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_Close_rr1_Mid.wav",
+      "sha256": "4e4dbb4ddbeea653f95c2c229685fd5966ed9492fb8489d89d19dbd864f1a6b4",
+      "bytes": 236820
+    },
+    "46": {
+      "name": "open hat",
+      "file": "46_hato.wav",
+      "path": "Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitO_rr1_Mid.wav",
+      "sha256": "fa492ec14cc6924b43ad5fcf9e9a0f406d926998835bde2eb5847cd15ad25be7",
+      "bytes": 1026612
+    },
+    "49": {
+      "name": "crash",
+      "file": "49_crash.wav",
+      "path": "Idiophones/Struck Idiophones/Clash Cymbals 1/cymbal_crash1_ff2.wav",
+      "sha256": "6f27c36fe2a829b667fd3372e1488437671534c0c719af9ae90128e5f99629d3",
+      "bytes": 2344542
+    }
+  }
+}

@@ -1,0 +1,106 @@
+# rondo
+
+A small toolkit that lets an LLM drive the Reaper DAW. One script per task,
+stdlib only, no server to run. You talk; rondo writes notes, loads
+instruments, copies sections and renders a wav you can listen to.
+
+## Golden path
+
+Reaper must be running with a project open, and the bridge loaded once per
+Reaper launch:
+
+```bash
+open -a REAPER                                                    # if not running
+open -a REAPER ~/"Library/Application Support/REAPER/Scripts/reaper_mcp_bridge.lua"
+python scripts/status.py                                          # is it awake?
+```
+
+`status.py` is what you run first, every time. It prints the tempo, every
+track with its FX and item count, the regions, and where the cursor is. Then
+the loop is always the same:
+
+```bash
+python scripts/status.py                                    # look
+python scripts/add_instrument.py --track Pad --instrument surge --patch "Bell Pad"
+python scripts/write_notes.py --track Pad --bar 1 --grid pad.txt --replace
+python scripts/render.py --from 1 --to 8 --out /private/tmp/take.wav   # listen
+```
+
+`track.py` and `project.py` are the small moves in between: `track.py show
+--track Pad`, `track.py mute --track 3`, `project.py region --name A --from 1
+--to 8`. `--track` takes a name (case-insensitive, exact then prefix) or a
+0-based index, and an ambiguous name is an error rather than a guess.
+
+Every script takes `--json` where machine output helps, and `--help` always
+tells the truth. Scripts act on the **active project tab**.
+
+Unit tests: `python -m unittest discover -s scripts/tests`.
+
+## Tasks
+
+<!-- rondo:tasks -->
+| task | what it does | needs |
+| --- | --- | --- |
+| `scripts/add_instrument.py` | Find or create a track and load Surge XT, Dexed or the Apple GM piano on it, optionally with a patch. | reaper-running |
+| `scripts/build_kit.py` | Build a ReaSamplOmatic5000 drum kit on one track from a note-to-wav manifest. | reaper-running, samples |
+| `scripts/copy_section.py` | Copy bars X..Y to bar Z on every track (or named tracks) and optionally name the result as a region. | reaper-running |
+| `scripts/hum_to_grid.py` | Transcribe a hummed or sung wav into rondo grid text you can feed to write-notes. | librosa |
+| `scripts/index.py` | List every rondo script from its docstring header as a markdown table; --check keeps AGENTS.md honest. | nothing |
+| `scripts/install_samples.py` | Download the drum one-shots named in samples/kit.json (CC0, from VCSL) into samples/. | network |
+| `scripts/project.py` | Project-wide moves: save, move the edit cursor, toggle the metronome, name a region or marker, set the tempo, list tabs. | reaper-running |
+| `scripts/record.py` | Arm a track for the mic or the virtual keyboard, set monitoring and the metronome, or disarm everything. | reaper-running |
+| `scripts/render.py` | Render a bar range or a named region to a 44.1k stereo wav, synchronously. | reaper-running |
+| `scripts/run_lua.py` | Run a ReaScript file or inline snippet inside the running Reaper and print its output. | reaper-running |
+| `scripts/status.py` | Read-only summary of the open Reaper project: tempo, tracks, FX, regions, cursor. | reaper-running |
+| `scripts/track.py` | One track at a time: mute, solo, arm, rename, add, delete, clear items, set the input, set the volume, or show its full state. | reaper-running |
+| `scripts/write_notes.py` | Write a melody from a grid text file (or JSON notes) onto a track at a bar. | reaper-running |
+<!-- /rondo:tasks -->
+
+Regenerate this table with `python scripts/index.py --write`;
+`python scripts/index.py --check` fails if it is stale.
+
+### Verified Reaper API facts
+
+`docs/reaper-notes.md` is the ground truth for how this machine's Reaper
+actually behaves: the exact `TrackFX_AddByName` strings, the `.fxp` ->
+`.vstpreset` byte layout that makes Surge patches loadable, the RS5K parameter
+map, the synchronous render action, and the traps (`"AU: Surge XT"` loads the
+wrong plugin; `Main_SaveProjectEx` does not clear the dirty flag). Read it
+before writing any new ReaScript, and trust it over your own recollection.
+
+### The grid note format
+
+`docs/grid-format.md` specifies the bar-per-line melody notation that
+`write_notes.py` and `hum_to_grid.py` speak, with worked examples. Read it
+when you need to write, correct, or generate a melody.
+
+## Standing rules
+
+* **Never commit audio.** No `.wav`, `.aif`, `.mp3`, no renders, no samples.
+  `.gitignore` covers them; do not add exceptions. Renders go to
+  `/private/tmp` or `render/` and nowhere else in the repo.
+* **Never `git add -A` or `git add .`.** Stage explicit paths.
+* **Samples arrive only through `samples/kit.json`** and
+  `scripts/install_samples.py` (CC0 sources, pinned commit, size + sha256
+  checked). Do not drop audio into the repo by hand.
+* **Leave `~/Library/Application Support/REAPER` alone** apart from reading
+  `reaper.ini` / the plugin caches and using the bridge mailbox directory.
+* **Never work in the user's open project when testing.** Open a new tab
+  (`Main_OnCommand(40859, 0)`), do everything there, then
+  `Main_openProject("noprompt:<temp>.rpp")` and `Main_OnCommand(40860, 0)` to
+  close it without a save prompt. Check `status.py`'s tab list before and
+  after. If something goes wrong, stop and say so rather than improvising in
+  the user's project.
+* **No dialogs.** Renders stay on action `42230` with `RENDER_ADDTOPROJ 0`.
+* **rondo never moves the transport.** It sets a track up; the human presses
+  record and play.
+
+## Assumptions worth knowing
+
+* **4/4.** Every bar-to-quarter-note conversion assumes four beats to the bar.
+  `status.py` reports the project's real time signature, so you can notice
+  when the assumption is wrong.
+* **Bars are 1-based and inclusive.** `--from 1 --to 8` is the first eight
+  bars. So is a region reported as `bars 1-8`.
+* Only `scripts/hum_to_grid.py` needs third-party packages
+  (`pip install -e '.[transcribe]'`). Everything else is stdlib.
