@@ -14,7 +14,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rondo import _cli, reaper  # noqa: E402
+from rondo import _cli, reaper, tracks  # noqa: E402
 
 # Reaper has no "copy items in a time range to a position" call. The
 # deterministic route is chunk-level: GetItemStateChunk -> AddMediaItemToTrack
@@ -23,7 +23,7 @@ from rondo import _cli, reaper  # noqa: E402
 LUA = r"""
 local FROM_QN, TO_QN, AT_QN = %(from)r, %(to)r, %(at)r
 local REGION_END_QN = %(region_end)r
-local TRACKS = %(tracks)s          -- nil = every track
+local TRACKS = %(tracks)s          -- nil = every track; else 0-based INDEXES
 local REGION = %(region)s          -- nil = do not add a region
 
 local t0 = reaper.TimeMap2_QNToTime(0, FROM_QN)
@@ -31,10 +31,12 @@ local t1 = reaper.TimeMap2_QNToTime(0, TO_QN)
 local ta = reaper.TimeMap2_QNToTime(0, AT_QN)
 local delta = ta - t0
 
+-- --tracks is resolved to indexes in Python (rondo/tracks.py), so a name, a
+-- role, an index or a prefix all arrive here as the same thing.
 local wanted = nil
 if TRACKS then
   wanted = {}
-  for _, n in ipairs(TRACKS) do wanted[n] = true end
+  for _, i in ipairs(TRACKS) do wanted[i] = true end
 end
 
 local function fresh_guids(chunk)
@@ -47,7 +49,7 @@ local rows, total, skipped = {}, 0, 0
 for t = 0, reaper.CountTracks(0) - 1 do
   local tr = reaper.GetTrack(0, t)
   local nm = track_name(tr)
-  if (not wanted) or wanted[nm] then
+  if (not wanted) or wanted[t] then
     local copied, partial = 0, 0
     local n = reaper.CountTrackMediaItems(tr)
     for i = 0, n - 1 do
@@ -99,7 +101,8 @@ def main(argv=None) -> int:
     ap.add_argument("--from", dest="start", type=int, required=True)
     ap.add_argument("--to", dest="stop", type=int, required=True)
     ap.add_argument("--at", type=int, required=True, help="destination bar")
-    ap.add_argument("--tracks", help="comma-separated track names (default: all)")
+    ap.add_argument("--tracks",
+                    help="comma-separated track names or indexes (default: all)")
     ap.add_argument("--region", help="name a region over the copy")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
@@ -114,12 +117,19 @@ def main(argv=None) -> int:
     if from_qn <= at_qn < to_qn:
         raise SystemExit("--at lands inside the source range; that would copy onto itself")
 
-    tracks = [t.strip() for t in a.tracks.split(",")] if a.tracks else None
     _cli.require_reaper()
+    want = None
+    if a.tracks:
+        rows = tracks.snapshot()
+        want = []
+        for spec in a.tracks.split(","):
+            i, _ = tracks.find(spec, rows)
+            if i not in want:          # naming one track twice is not two copies
+                want.append(i)
     r = reaper.run_lua_json(LUA % {
         "from": from_qn, "to": to_qn, "at": at_qn,
         "region_end": region_end_qn,
-        "tracks": reaper.lua_value(tracks) if tracks else "nil",
+        "tracks": reaper.lua_value(want) if want else "nil",
         "region": reaper.lua_str(a.region) if a.region else "nil",
     }, timeout=45.0)
 

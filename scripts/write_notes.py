@@ -14,16 +14,20 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rondo import _cli, grid as gridmod, reaper  # noqa: E402
+from rondo import _cli, grid as gridmod, reaper, tracks  # noqa: E402
 
+# The track arrives as an INDEX: write_notes resolves --track in Python
+# (rondo/tracks.py) against a snapshot it reads first, so "--track 6",
+# "--track pad" and "--track Pad (Surge: Bell)" all reach the same track. The
+# prelude's find_track is exact-only and is deliberately not used here.
 LUA = r"""
-local NAME = %(name)s
+local TI, NAME = %(index)d, %(name)s
 local START_QN, END_QN = %(start)r, %(end)r
 local NOTES = %(notes)s
 local REPLACE = %(replace)s
 
-local tr = find_track(NAME)
-if not tr then error("no track named " .. NAME) end
+local tr = reaper.GetTrack(0, TI)
+if not tr then error("no track at index " .. TI, 0) end
 
 reaper.Undo_BeginBlock()
 local removed = 0
@@ -52,7 +56,7 @@ reaper.Undo_EndBlock("rondo: write notes on " .. NAME, -1)
 reaper.UpdateArrange()
 
 log(jsonenc({
-  track = NAME, notes = #NOTES, removed = removed,
+  track = NAME, index = TI, notes = #NOTES, removed = removed,
   start_qn = START_QN, end_qn = END_QN,
   item_position = reaper.GetMediaItemInfo_Value(item, "D_POSITION"),
   item_length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH"),
@@ -122,8 +126,11 @@ def main(argv=None) -> int:
     end = start + bars * 4
 
     _cli.require_reaper()
+    rows = tracks.snapshot()
+    index, row = tracks.find(a.track, rows)
     r = reaper.run_lua_json(LUA % {
-        "name": reaper.lua_str(a.track),
+        "index": index,
+        "name": reaper.lua_str(row["name"]),
         "start": start,
         "end": end,
         "notes": reaper.lua_value(notes),
@@ -133,7 +140,8 @@ def main(argv=None) -> int:
     if a.json:
         print(json.dumps(r, indent=2))
     else:
-        print(f"wrote {r['midi_notes']} note(s) to \"{r['track']}\" at bar {a.bar} "
+        print(f"wrote {r['midi_notes']} note(s) to track {r['index']} "
+              f"\"{r['track'] or '(unnamed)'}\" at bar {a.bar} "
               f"({bars} bar item, {r['item_length']:.2f}s)"
               + (f", removed {r['removed']} existing item(s)" if a.replace else ""))
     return 0
