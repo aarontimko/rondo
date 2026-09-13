@@ -68,6 +68,16 @@ which also gives it free `O_EXCL` slot allocation.
   tab. This is the safe test harness: new tab, work, save-as with `&8`, close.
   `Main_openProject("noprompt:" .. path)` also clears the way, but it reloads
   the project and kills the bridge.
+* **The `&8` save is not optional, and skipping it hangs the script, not just
+  the close.** `40860` on a tab that is dirty puts Reaper's modal "save
+  changes?" prompt up, and that prompt blocks the ReaScript that called it:
+  `run_lua` sits there until it times out, the output file never gets
+  `@@RONDO_DONE`, nothing is closed, and the scratch tab is left active in
+  front of the user waiting for a click. Observed 2026-09 on 7.79 after a
+  scratch tab had been written to. Do the save in its **own** `run_lua` call,
+  check `IsProjectDirty(scratch)` reads `0` afterwards, and only then run the
+  close script -- one script that saves and closes would have the same effect,
+  but a separate save means a timeout tells you which half failed.
 * `GetCursorPosition`, `GetPlayState` and `EnumProjectMarkers` are
   active-project-only. The `...Ex` / `...3` variants take a project.
 * `Main_openProject("noprompt:<path>")` on a path that does **not** exist
@@ -175,7 +185,11 @@ in `/Library/Application Support/Surge XT/patches_factory/<Category>/*.fxp`
 (641 of them, categorised by directory; the metadata tags are unreliable).
 
 After a successful `SetPreset(path)`, `TrackFX_GetPresetIndex` returns `-1` and
-`TrackFX_GetPreset` returns the **path**, not a patch name. That is expected.
+`TrackFX_GetPreset` returns the **path**, not a patch name. That is expected --
+and it is why the `(Surge: Nice Pluck 1)` half of an automatic track name is
+built in Python from the `.fxp` rondo resolved, never from what Reaper reports
+back. Asking Reaper would put `/var/folders/.../Nice Pluck 1.vstpreset` in the
+track name.
 
 The `vst_chunk` route via `TrackFX_SetNamedConfigParm` also works (Reaper's
 VST3 chunk = int32 len, int32 1, component state, 8 zero bytes) but reads back
