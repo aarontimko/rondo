@@ -1,3 +1,5 @@
+# Actions only: rondo has no runtime dependencies, so a pip entry only
+# produced noise about optional-extra floors.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -12,22 +14,6 @@ updates:
       prefix: "ci(deps)"
     groups:
       actions:
-        update-types:
-          - minor
-          - patch
-
-  - package-ecosystem: pip
-    directory: "/"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "06:00"
-      timezone: Etc/UTC
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: "chore(deps)"
-    groups:
-      python:
         update-types:
           - minor
           - patch

@@ -227,5 +227,5 @@ __marimo__/
 samples/*.wav
 render/
 
-# Scratch / private notes (also covered by a global ignore on this machine).
+# Local scratch directory, never committed.
 z_ignore/

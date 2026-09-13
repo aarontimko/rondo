@@ -62,7 +62,7 @@ def transcribe(path, bpm, start_sec, dur_sec, slots_per_bar=8, voicing=0.3,
     f0, voiced, prob = librosa.pyin(
         y, fmin=fmin, fmax=fmax, sr=sr, hop_length=hop, frame_length=2048
     )
-    # LESSON FROM THE SPIKE: do NOT gate on level. AirPods used as an input
+    # Do NOT gate on level. Bluetooth earbuds used as an input
     # duck a steady hum by ~30 dB, so a -30 dBFS gate throws away material that
     # pyin is 100% confident about. Gate on the voicing probability instead.
     ok = np.asarray(voiced) & (np.asarray(prob) > voicing) & ~np.isnan(f0)
