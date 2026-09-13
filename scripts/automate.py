@@ -36,59 +36,17 @@ DB_MIN, DB_MAX = -150.0, 24.0
 MAX_SHOW_BARS = 64
 
 
-class PickError(SystemExit):
-    """A ``--fx`` / ``--param`` / ``--envelope`` spec named no single thing."""
+def pick(spec: str, names: list[str], flag: str) -> int:
+    """``--fx`` / ``--param`` / ``--envelope`` SPEC + the real names -> an index.
 
-
-def pick(spec: str, names: list[str], what: str) -> int:
-    """``SPEC`` + the real names -> a 0-based index.
-
-    The same spirit as ``rondo.tracks.resolve``, one step looser at the end
-    because plugin parameter names are long and there are thousands of them:
-
-    1. case-insensitive **exact** name match;
-    2. otherwise, a bare non-negative integer is an **index**;
-    3. otherwise, a unique case-insensitive **substring** match.
-
-    More than one match is an error listing the candidates -- rondo never
-    guesses which parameter you meant.
+    One line, because the rule is ``rondo.tracks.resolve``: exact name, then
+    index, then -- one step looser than ``--track``, because plugin parameter
+    names are long and there are thousands of them -- a unique case-insensitive
+    SUBSTRING instead of a prefix. Ambiguity is an error naming the candidates;
+    rondo never guesses which parameter you meant.
     """
-    spec = str(spec).strip()
-    if not spec:
-        raise PickError(f"{what}: give a name or a 0-based index")
-    if not names:
-        raise PickError(f"{what} {spec!r}: there are none to choose from")
-
-    low = spec.lower()
-    exact = [i for i, n in enumerate(names) if n.lower() == low]
-    if len(exact) == 1:
-        return exact[0]
-    if exact:
-        raise PickError(f"{what} {spec!r} names {len(exact)}: {_candidates(names, exact)}. "
-                        "Use the index.")
-
-    if spec.isdigit():
-        i = int(spec)
-        if i < len(names):
-            return i
-        raise PickError(f"{what} {spec}: out of range; there are {len(names)} "
-                        f"(0..{len(names) - 1})")
-
-    hits = [i for i, n in enumerate(names) if low in n.lower()]
-    if len(hits) == 1:
-        return hits[0]
-    if hits:
-        raise PickError(
-            f"{what} {spec!r} matches {len(hits)}: {_candidates(names, hits)}. "
-            "Use a longer name or the index."
-        )
-    raise PickError(f"{what} {spec!r} matches nothing. Have: "
-                    f"{_candidates(names, list(range(len(names))))}")
-
-
-def _candidates(names: list[str], idxs: list[int], limit: int = 8) -> str:
-    shown = ", ".join(f"{i} {names[i]!r}" for i in idxs[:limit])
-    return shown + (f", ... and {len(idxs) - limit} more" if len(idxs) > limit else "")
+    return tracks.resolve(spec, names, flag=flag, noun=flag.lstrip("-"),
+                          role=False, prefix=False, substring=True)
 
 
 def shape_code(name: str) -> int:
@@ -96,7 +54,7 @@ def shape_code(name: str) -> int:
     try:
         return SHAPES[name]
     except KeyError:
-        raise PickError(f"--shape {name!r}: pick one of {', '.join(SHAPES)}")
+        raise SystemExit(f"--shape {name!r}: pick one of {', '.join(SHAPES)}")
 
 
 def check_db(value: float, flag: str) -> float:
