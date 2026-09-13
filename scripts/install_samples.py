@@ -22,8 +22,7 @@ from rondo import _cli  # noqa: E402
 
 DEFAULT_MANIFEST = _cli.REPO / "samples" / "kit.json"
 
-# curl and wget are blocked by a global hook on this machine; use urllib.
-UA = "rondo/0.1 (+https://github.com/) python-urllib"
+UA = "rondo/0.1 (+https://github.com/aarontimko/rondo) python-urllib"
 
 
 def download(url: str, dest: Path, timeout: float = 120.0) -> bytes:
@@ -74,6 +73,8 @@ def main(argv=None) -> int:
         want_sha = entry.get("sha256")
         if want_sha and hashlib.sha256(blob).hexdigest() != want_sha:
             status = "SHA256 MISMATCH"
+        if status != "ok":
+            dest.unlink(missing_ok=True)  # never leave a wrong file for build_kit to load
         results.append({"note": int(note), "file": str(dest), "status": status,
                         "bytes": len(blob),
                         "sha256": hashlib.sha256(blob).hexdigest()})

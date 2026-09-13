@@ -9,6 +9,7 @@ open in Reaper. Nothing here needs a render; you press play yourself.
 Arm a track for the virtual keyboard and play a bass idea over the click.
 
 ```bash
+python scripts/add_instrument.py --track "Bass" --instrument surge --patch "Wide Bassline"
 python scripts/record.py --track "Bass" --source keyboard --monitor on
 ```
 
@@ -31,6 +32,7 @@ jumps on the bass, a second instrument answering it, a filter envelope that
 breathes every four bars, and a 16-bar form with two named regions.
 
 ```bash
+python scripts/install_samples.py            # once; fetches the CC0 one-shots
 python scripts/build_kit.py --track Drums
 python scripts/write_notes.py --track Drums --bar 1 --notes @drums.json --replace
 python scripts/add_instrument.py --track Stabs --instrument surge --patch "Clavi"
@@ -49,8 +51,10 @@ its own muted track, identical except for the one thing being compared, and
 solo them in Reaper while the song loops.
 
 ```bash
-for n in 1 2 3 4; do
-  python scripts/add_instrument.py --track "Brass alt $n" --instrument surge --patch "$PATCH_$n"
+n=0
+for patch in "Brassy" "OB-8 Jump" "Toto Brass" "Synth Brass 1"; do
+  n=$((n + 1))
+  python scripts/add_instrument.py --track "Brass alt $n" --instrument surge --patch "$patch"
   python scripts/write_notes.py --track "Brass alt $n" --bar 9 --notes @brass.json --replace
   python scripts/track.py mute --track "Brass alt $n"
 done
@@ -96,7 +100,7 @@ item with a recommendation and a real alternative, and you rule by number
 
 ## 6. Try several versions at once
 
-Rulings you are unsure about do not need to be argued. Ask for versions. Each
+Decisions you are unsure about do not need to be argued. Ask for versions. Each
 one is a project clone with a letter, built in a chain: save the open project
 under a new name (the tab adopts the name, nothing reloads), apply that
 version's changes, save, and repeat.
