@@ -278,7 +278,7 @@ class TestProjectLua(unittest.TestCase):
 TABS = [
     {"index": 0, "name": "prototype-1.RPP", "path": "/m/prototype-1.RPP",
      "active": False, "dirty": False, "tracks": 9},
-    {"index": 1, "name": "nightdrive.RPP", "path": "/m/nightdrive.RPP",
+    {"index": 1, "name": "sunset.RPP", "path": "/m/sunset.RPP",
      "active": True, "dirty": True, "tracks": 5},
     {"index": 2, "name": "", "path": "", "active": False, "dirty": False, "tracks": 0},
 ]
@@ -286,14 +286,14 @@ TABS = [
 
 class TestResolveTab(unittest.TestCase):
     def test_names_drop_the_extension_and_label_unsaved_tabs(self):
-        self.assertEqual(project.tab_names(TABS), ["prototype-1", "nightdrive", "(unsaved)"])
+        self.assertEqual(project.tab_names(TABS), ["prototype-1", "sunset", "(unsaved)"])
 
     def test_exact_with_or_without_extension_any_case(self):
         for spec in ("prototype-1", "PROTOTYPE-1.rpp", "prototype-1.RPP", " prototype-1 "):
             self.assertEqual(project.resolve_tab(spec, TABS), 0, spec)
 
     def test_prefix(self):
-        self.assertEqual(project.resolve_tab("night", TABS), 1)
+        self.assertEqual(project.resolve_tab("suns", TABS), 1)
 
     def test_index(self):
         self.assertEqual(project.resolve_tab("2", TABS), 2)
@@ -311,11 +311,11 @@ class TestResolveTab(unittest.TestCase):
     def test_unknown_and_ambiguous_are_errors_that_list_the_tabs(self):
         with self.assertRaises(SystemExit) as c:
             project.resolve_tab("mixdown", TABS)
-        self.assertIn("nightdrive", str(c.exception))
-        tabs = TABS + [{"index": 3, "name": "nightdrive-v2.RPP", "path": "/m/n2.RPP",
+        self.assertIn("sunset", str(c.exception))
+        tabs = TABS + [{"index": 3, "name": "sunset-v2.RPP", "path": "/m/n2.RPP",
                         "active": False, "dirty": False, "tracks": 1}]
         with self.assertRaises(SystemExit):
-            project.resolve_tab("night", tabs)
+            project.resolve_tab("suns", tabs)
 
 
 def save_result(**over):
@@ -398,14 +398,14 @@ class TestSaveMain(unittest.TestCase):
         self.assertIn("Main_SaveProjectEx(proj, AS, 8)", src)
 
     def test_the_active_tab_is_not_the_default_for_save_as(self):
-        # nightdrive is the active tab in TABS; naming prototype-1 must pin index 0.
+        # sunset is the active tab in TABS; naming prototype-1 must pin index 0.
         _, _, run = self.run_save(save_result(), "--as", self.AS, "--project", "proto")
         self.assertIn(", 0, ", run.call_args_list[1].args[0].splitlines()[1])
 
     def test_plain_save_defaults_to_the_active_tab(self):
-        r = save_result(method="Main_SaveProject", target="/m/nightdrive.RPP", tab=1,
-                        active=True, path_before="/m/nightdrive.RPP",
-                        path_after="/m/nightdrive.RPP")
+        r = save_result(method="Main_SaveProject", target="/m/sunset.RPP", tab=1,
+                        active=True, path_before="/m/sunset.RPP",
+                        path_after="/m/sunset.RPP")
         with mock.patch.object(project.reaper, "run_lua_json", return_value=r) as run, \
              mock.patch.object(project._cli, "require_reaper", return_value="7.79"), \
              mock.patch("sys.stdout", new_callable=io.StringIO) as out:
