@@ -5,7 +5,11 @@ rondo follows [semantic versioning](https://semver.org/) from its first release.
 
 ## [Unreleased]
 
-Everything below is what `main` carries today. There is no release yet.
+Nothing yet.
+
+## 0.1.0 - 2026-09-13
+
+The first release: the scripts as they stand on the day the repository went public.
 
 ### Talking to Reaper
 
