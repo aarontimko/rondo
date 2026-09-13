@@ -13,8 +13,11 @@ permissions:
 jobs:
   codeql:
     name: codeql (python)
+    # Code scanning needs a public repository (or Advanced Security); skipped while private.
+    if: github.event.repository.private == false
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       security-events: write
     steps:
@@ -28,8 +31,8 @@ jobs:
           category: "/language:python"
 
   dependency-review:
-    # Needs a diff and a public repository, so pull requests only.
-    if: github.event_name == 'pull_request'
+    # Needs a diff and a public repository, so pull requests only, once public.
+    if: github.event_name == 'pull_request' && github.event.repository.private == false
     runs-on: ubuntu-latest
     permissions:
       contents: read
