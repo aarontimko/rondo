@@ -97,7 +97,16 @@ def transcribe(path, bpm, start_sec, dur_sec, slots_per_bar=8, voicing=0.3,
         rows.append((s, int(round(pitch)) + transpose, cov, pitch - round(pitch)))
 
     onset_slots = {int(t // slot_sec) for t in onset_times}
+    return slots_to_notes(rows, onset_slots), rows
 
+
+def slots_to_notes(rows, onset_slots) -> list[gridmod.Note]:
+    """Merge per-slot pitches into notes.
+
+    ``rows`` are ``(slot, midi_or_None, coverage, cents)``; a slot continues the
+    previous note when the pitch matches, the slots are adjacent, and no onset
+    was detected in it. Pure, so it is unit-testable without librosa.
+    """
     notes: list[gridmod.Note] = []
     for s, pitch, _cov, _cents in rows:
         if pitch is None:
@@ -109,7 +118,7 @@ def transcribe(path, bpm, start_sec, dur_sec, slots_per_bar=8, voicing=0.3,
             notes[-1] = gridmod.Note(prev.slot, prev.length + 1, pitch)
         else:
             notes.append(gridmod.Note(s, 1, pitch))
-    return notes, rows
+    return notes
 
 
 def main(argv=None) -> int:
