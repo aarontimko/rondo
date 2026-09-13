@@ -143,3 +143,11 @@ when you need to write, correct, or generate a melody.
   bars. So is a region reported as `bars 1-8`.
 * Only `scripts/hum_to_grid.py` needs third-party packages
   (`pip install -e '.[transcribe]'`). Everything else is stdlib.
+
+### Contributing to the repository itself
+
+`CONTRIBUTING.md` is the public contributor doc: the setup, the three commands
+CI runs (`python -m unittest discover -s scripts/tests`, `python
+scripts/index.py --check`, `ruff check scripts`), the commit convention, and
+the pull-request rules. Read it before opening a PR or changing the workflows;
+it is also where the "no hooks, CI is the check" decision is written down.

@@ -96,7 +96,7 @@ item with a recommendation and a real alternative, and you rule by number
 
 ## 6. Try several versions at once
 
-Rulings you are unsure about do not need to be argued. Ask for versions. Each
+Decisions you are unsure about do not need to be argued. Ask for versions. Each
 one is a project clone with a letter, built in a chain: save the open project
 under a new name (the tab adopts the name, nothing reloads), apply that
 version's changes, save, and repeat.
