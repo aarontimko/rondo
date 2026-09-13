@@ -32,7 +32,12 @@ python scripts/render.py --from 1 --to 8 --out /private/tmp/take.wav   # listen
 0-based index, and an ambiguous name is an error rather than a guess.
 
 Every script takes `--json` where machine output helps, and `--help` always
-tells the truth. Scripts act on the **active project tab**.
+tells the truth. Scripts act on the **active project tab**, with one
+exception: `project.py save --as PATH --project TAB` names the tab (file name
+with or without `.rpp`, or the index from `project.py tabs`) and saves it by
+pointer, so "save the prototype file as take2" is `project.py tabs` to see
+what is open, then `project.py save --as ~/songs/take2.rpp --project
+prototype-1`, whatever tab the human is looking at.
 
 Unit tests: `python -m unittest discover -s scripts/tests`.
 
@@ -91,9 +96,11 @@ when you need to write, correct, or generate a melody.
   `Main_SaveProjectEx(0, "/private/tmp/<temp>.rpp", 8)` (the tab adopts the
   file and is clean; the bridge survives) and `Main_OnCommand(40860, 0)` to
   close it without a save prompt. Check `status.py`'s tab list before and
-  after, and check the active tab's path before acting: the user may switch
-  tabs while you work. If something goes wrong, stop and say so rather than
-  improvising in the user's project.
+  after, and check the active tab's path before acting: the user may open,
+  switch or close tabs while you work, so tab **indices shift**. Name tabs
+  by file name, never by an index remembered from an earlier command. If
+  something goes wrong, stop and say so rather than improvising in the
+  user's project.
 * **No dialogs.** Renders stay on action `42230` with `RENDER_ADDTOPROJ 0`.
 * **rondo never moves the transport.** It sets a track up; the human presses
   record and play.

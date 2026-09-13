@@ -3,7 +3,7 @@
 name: project
 summary: Project-wide moves: save, move the edit cursor, toggle the metronome, name a region or marker, set the tempo, list tabs.
 needs: reaper-running
-usage: python scripts/project.py tabs | python scripts/project.py region --name B --from 9 --to 16 | python scripts/project.py tempo --bpm 96 | python scripts/project.py cursor --bar 9
+usage: python scripts/project.py tabs | python scripts/project.py save --as ~/songs/take2.rpp --project prototype-1 | python scripts/project.py region --name B --from 9 --to 16 | python scripts/project.py tempo --bpm 96
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rondo import _cli, reaper  # noqa: E402
+from rondo import _cli, reaper, tracks  # noqa: E402
 
 # Main_SaveProject(0, false) saves in place and CLEARS the dirty flag, but only
 # once the tab has a filename; on an unnamed tab it would open a Save As
@@ -24,27 +24,40 @@ from rondo import _cli, reaper  # noqa: E402
 # ReaProject", verified on 7.79) makes the tab adopt the path and clears the
 # dirty flag, and nothing is reloaded, so the bridge survives and the undo
 # history stays. Options 0 would only write a copy. Both are reported honestly.
+#
+# The tab is addressed by its ReaProject POINTER (EnumProjects(INDEX)), never
+# by "whatever is active": the user may switch tabs while a script runs. INDEX
+# -1 is the active tab (plain `save` without --project). EXPECT is the path
+# Python saw when it resolved --project; if the tab at INDEX no longer has it,
+# the tabs changed underneath us and the save is refused.
 SAVE_AS_OPTIONS = 8
 
 SAVE_LUA = r"""
-local AS = %(as)s
-local _, before = reaper.EnumProjects(-1, "")
+local AS, INDEX, EXPECT = %(as)s, %(index)d, %(expect)s
+local proj, before = reaper.EnumProjects(INDEX, "")
+if not proj then error("no project tab at index " .. INDEX .. " any more; re-run `project.py tabs`", 0) end
+if EXPECT ~= nil and before ~= EXPECT then
+  error("tab " .. INDEX .. " is now " .. (before == "" and "(unsaved)" or before)
+        .. ", not " .. (EXPECT == "" and "(unsaved)" or EXPECT)
+        .. "; the tabs changed, re-run `project.py tabs`", 0)
+end
 local method, target
 if AS then
-  reaper.Main_SaveProjectEx(0, AS, %(options)d)
+  reaper.Main_SaveProjectEx(proj, AS, %(options)d)
   method, target = "Main_SaveProjectEx", AS
 else
   if before == nil or before == "" then
     error("this tab has no filename yet, so a plain save would open a Save As "
           .. "dialog. Give --as PATH (the tab adopts it, no dialog) or save it once by hand.", 0)
   end
-  reaper.Main_SaveProject(0, false)
+  reaper.Main_SaveProject(proj, false)
   method, target = "Main_SaveProject", before
 end
-local _, after = reaper.EnumProjects(-1, "")
+local _, after = reaper.EnumProjects(INDEX, "")
 local adopted = after ~= "" and after == target
-local dirty = reaper.IsProjectDirty(0) == 1
-log(jsonenc({ method = method, target = target,
+local dirty = reaper.IsProjectDirty(proj) == 1
+log(jsonenc({ method = method, target = target, tab = INDEX,
+              active = proj == reaper.EnumProjects(-1, ""),
               path_before = before, path_after = after,
               written = reaper.file_exists(target),
               adopted = adopted, dirty = dirty,
@@ -146,6 +159,29 @@ def guard_project_path(path: str) -> Path:
     )
 
 
+def tab_names(tabs: list[dict]) -> list[str]:
+    """What ``--project`` matches against: the file name without ``.rpp``.
+
+    ``prototype-1`` and ``prototype-1.rpp`` both reach ``prototype-1.RPP``; an
+    unnamed tab is ``(unsaved)`` (reach it by index if there are two).
+    """
+    out = []
+    for t in tabs:
+        n = t["name"] or ""
+        if n.lower().endswith(".rpp"):
+            n = n[:-4]
+        out.append(n or "(unsaved)")
+    return out
+
+
+def resolve_tab(spec: str, tabs: list[dict]) -> int:
+    """``--project SPEC`` -> tab index, with ``--track``'s exact/index/prefix rule."""
+    spec = str(spec).strip()
+    if spec.lower().endswith(".rpp"):
+        spec = spec[:-4]
+    return tracks.resolve(spec, tab_names(tabs), flag="--project", noun="tab")
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         description=__doc__.strip().splitlines()[1],
@@ -161,10 +197,17 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--json", action="store_true")
         return p
 
-    add("save", "Save the project in place, or Save As with --as.").add_argument(
+    p = add("save", "Save a project tab in place, or Save As with --as --project.")
+    p.add_argument(
         "--as", dest="as_path", metavar="PATH",
         help="save as PATH (must end in .rpp): the tab adopts that filename, no dialog. "
-             "On a tab that already has a filename this is a rename, and the output says so.")
+             "Requires --project. On a tab that already has a filename this is a "
+             "rename, and the output says so.")
+    p.add_argument(
+        "--project", metavar="TAB",
+        help="which tab: its file name with or without .rpp (case-insensitive, exact "
+             "then prefix) or its 0-based index from `tabs`. Ambiguity is an error. "
+             "Default for a plain save: the active tab.")
     p = add("cursor", "Move the edit cursor to a bar.")
     p.add_argument("--bar", type=int, required=True)
     p.add_argument("--beat", type=float, default=1.0, help="1-based, so 1 is the downbeat")
@@ -190,16 +233,16 @@ def render_save(r: dict) -> str:
     anything else is described from the fields Reaper reported, so the text
     never claims a write that did not happen.
     """
-    tab = (f"the tab is {r['path_after'] or '(unsaved)'} and "
+    tab = (f"tab {r['tab']} is {r['path_after'] or '(unsaved)'} and "
            f"{'has' if r['dirty'] else 'has no'} unsaved changes")
     if r["method"] == "Main_SaveProject":
         if r["ok"]:
-            return f"saved in place: {r['target']}"
+            return f"saved in place: {r['target']} (tab {r['tab']})"
         return f"save in place of {r['target']} did not stick: {tab}"
     if r["ok"]:
         renamed = r["path_before"] and r["path_before"] != r["target"]
-        return (f"saved as {r['target']}; the tab now has that name and no unsaved changes"
-                + (f" (it was {r['path_before']})" if renamed else ""))
+        return (f"saved as {r['target']}; tab {r['tab']} now has that name and no "
+                "unsaved changes" + (f" (it was {r['path_before']})" if renamed else ""))
     wrote = "wrote" if r["written"] else "did NOT write"
     return f"{wrote} {r['target']}, and {tab}"
 
@@ -222,6 +265,11 @@ def main(argv=None) -> int:
 
     as_path = None
     if a.command == "save" and a.as_path:
+        if not a.project:
+            raise SystemExit(
+                "--as needs --project TAB so the save lands on the tab you mean, "
+                "not on whichever tab happens to be active. Run `project.py tabs` "
+                "and name one by file name or index.")
         as_path = guard_project_path(a.as_path)
         # Reaper's own behaviour on an unwritable directory is unverified (it
         # may show an error box), so refuse here and never find out.
@@ -244,8 +292,15 @@ def main(argv=None) -> int:
     _cli.require_reaper()
 
     if a.command == "save":
+        index, expect = -1, None
+        if a.project:
+            tabs = reaper.run_lua_json(TABS_LUA, timeout=20.0)
+            index = resolve_tab(a.project, tabs)
+            expect = tabs[index]["path"]
         r = reaper.run_lua_json(
             SAVE_LUA % {"as": reaper.lua_str(str(as_path)) if as_path else "nil",
+                        "index": index,
+                        "expect": reaper.lua_str(expect) if expect is not None else "nil",
                         "options": SAVE_AS_OPTIONS},
             timeout=60.0)
         if a.json:

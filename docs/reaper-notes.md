@@ -57,7 +57,7 @@ which also gives it free `O_EXCL` slot allocation.
   dirty tab, a tab that already had another filename (a true rename), on
   a **non-active** tab addressed by its `ReaProject` pointer, and onto a path
   that **already exists** (overwritten silently, no prompt). `project.py save
-  --as` uses it. Options `0`, by contrast, writes a **copy**: an unnamed tab
+  --as --project` uses it by pointer, so the active tab is irrelevant. Options `0`, by contrast, writes a **copy**: an unnamed tab
   keeps its empty name and path (a named one keeps its old name), stays dirty,
   and closing it still prompts.
 * `GetSetProjectInfo_String(_, "PROJECT_NAME", x, true)` is a no-op. Reaper's
@@ -83,10 +83,15 @@ which also gives it free `O_EXCL` slot allocation.
   then `Main_openProject("noprompt:" .. path)` to adopt it) also works but
   reloads the project, which **kills the bridge** and drops the undo history;
   keep it only for closing a scratch tab whose state you do not care about.
-* Testing while the user is working in another tab: `Main_SaveProjectEx`,
+* Working while the user is in another tab: `Main_SaveProjectEx`,
   `Main_SaveProject`, `IsProjectDirty` and `MarkProjectDirty` all take a
-  `ReaProject` pointer from `EnumProjects(i)`, so a scratch tab can be driven
-  without making it active. Closing is the exception (`40860` is
+  `ReaProject` pointer from `EnumProjects(i)`, so a tab can be saved without
+  making it active (`project.py save --project` does this, and re-checks the
+  tab's path inside the Lua in case the tabs changed since it was resolved).
+  `InsertTrackAtIndex` and `Main_OnCommand` do **not** take a project: they
+  hit the active tab. A new tab from `40859` becomes active, but
+  `SelectProjectInstance(previous)` in the same script hands the UI straight
+  back, so a scratch tab can be created in the background. Closing is the exception (`40860` is
   active-only): `SelectProjectInstance(scratch)`, `40860`,
   `SelectProjectInstance(theirs)` in one script is a millisecond flicker.
   Always check the active tab's path first and refuse if it is not what you

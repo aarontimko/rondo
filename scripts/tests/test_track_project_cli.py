@@ -225,8 +225,10 @@ class TestProjectPathGuard(unittest.TestCase):
 class TestProjectLua(unittest.TestCase):
     def test_no_unsubstituted_placeholders(self):
         for src in (
-            project.SAVE_LUA % {"as": "nil", "options": project.SAVE_AS_OPTIONS},
-            project.SAVE_LUA % {"as": '"/tmp/x.rpp"', "options": project.SAVE_AS_OPTIONS},
+            project.SAVE_LUA % {"as": "nil", "index": -1, "expect": "nil",
+                                "options": project.SAVE_AS_OPTIONS},
+            project.SAVE_LUA % {"as": '"/tmp/x.rpp"', "index": 2, "expect": '""',
+                                "options": project.SAVE_AS_OPTIONS},
             project.CURSOR_LUA % {"qn": 32.0},
             project.METRONOME_LUA % {"want": "true"},
             project.MARK_LUA % {"name": '"B"', "t0": 32.0, "t1": 64.0,
@@ -247,24 +249,79 @@ class TestProjectLua(unittest.TestCase):
 
     def test_save_picks_the_right_call_for_each_case(self):
         self.assertIn("Main_SaveProjectEx", project.SAVE_LUA)
-        self.assertIn("Main_SaveProject(0, false)", project.SAVE_LUA)
+        self.assertIn("Main_SaveProject(proj, false)", project.SAVE_LUA)
 
     def test_save_as_uses_the_adopt_filename_option(self):
         # Main_SaveProjectEx option &8 = "set as the new project filename for
         # this ReaProject" (verified on Reaper 7.79). Without it Reaper writes a
         # copy and the tab stays "(unsaved)" and dirty.
         self.assertEqual(project.SAVE_AS_OPTIONS & 8, 8)
-        src = project.SAVE_LUA % {"as": '"/tmp/x.rpp"', "options": project.SAVE_AS_OPTIONS}
-        self.assertIn("reaper.Main_SaveProjectEx(0, AS, 8)", src)
+        src = project.SAVE_LUA % {"as": '"/tmp/x.rpp"', "index": 2, "expect": '""',
+                                  "options": project.SAVE_AS_OPTIONS}
+        self.assertIn("reaper.Main_SaveProjectEx(proj, AS, 8)", src)
         # Nothing reloads the project: that would stop the bridge's defer loop.
         self.assertNotIn("Main_openProject", src)
 
+    def test_save_addresses_the_tab_by_pointer_not_by_active(self):
+        src = project.SAVE_LUA % {"as": '"/tmp/x.rpp"', "index": 2, "expect": '""',
+                                  "options": project.SAVE_AS_OPTIONS}
+        self.assertIn("reaper.EnumProjects(INDEX, \"\")", src)
+        self.assertIn("reaper.Main_SaveProject(proj, false)", src)
+        self.assertIn("reaper.IsProjectDirty(proj)", src)
+        # No call passes 0 ("the active tab") as the project.
+        self.assertNotRegex(src, r"SaveProject(Ex)?\(0,")
+        self.assertNotIn("IsProjectDirty(0)", src)
+
+
+
+TABS = [
+    {"index": 0, "name": "prototype-1.RPP", "path": "/m/prototype-1.RPP",
+     "active": False, "dirty": False, "tracks": 9},
+    {"index": 1, "name": "nightdrive.RPP", "path": "/m/nightdrive.RPP",
+     "active": True, "dirty": True, "tracks": 5},
+    {"index": 2, "name": "", "path": "", "active": False, "dirty": False, "tracks": 0},
+]
+
+
+class TestResolveTab(unittest.TestCase):
+    def test_names_drop_the_extension_and_label_unsaved_tabs(self):
+        self.assertEqual(project.tab_names(TABS), ["prototype-1", "nightdrive", "(unsaved)"])
+
+    def test_exact_with_or_without_extension_any_case(self):
+        for spec in ("prototype-1", "PROTOTYPE-1.rpp", "prototype-1.RPP", " prototype-1 "):
+            self.assertEqual(project.resolve_tab(spec, TABS), 0, spec)
+
+    def test_prefix(self):
+        self.assertEqual(project.resolve_tab("night", TABS), 1)
+
+    def test_index(self):
+        self.assertEqual(project.resolve_tab("2", TABS), 2)
+
+    def test_unsaved_tab_by_label(self):
+        self.assertEqual(project.resolve_tab("(unsaved)", TABS), 2)
+
+    def test_two_unsaved_tabs_need_the_index(self):
+        tabs = TABS + [dict(TABS[2], index=3)]
+        with self.assertRaises(SystemExit) as c:
+            project.resolve_tab("(unsaved)", tabs)
+        self.assertIn("--project", str(c.exception))
+        self.assertEqual(project.resolve_tab("3", tabs), 3)
+
+    def test_unknown_and_ambiguous_are_errors_that_list_the_tabs(self):
+        with self.assertRaises(SystemExit) as c:
+            project.resolve_tab("mixdown", TABS)
+        self.assertIn("nightdrive", str(c.exception))
+        tabs = TABS + [{"index": 3, "name": "nightdrive-v2.RPP", "path": "/m/n2.RPP",
+                        "active": False, "dirty": False, "tracks": 1}]
+        with self.assertRaises(SystemExit):
+            project.resolve_tab("night", tabs)
 
 
 def save_result(**over):
     """What SAVE_LUA logs on a clean save-as of an unnamed tab, with overrides."""
-    r = {"method": "Main_SaveProjectEx", "target": "/p/b.rpp", "path_before": "",
-         "path_after": "/p/b.rpp", "written": True, "adopted": True, "dirty": False}
+    r = {"method": "Main_SaveProjectEx", "target": "/p/b.rpp", "tab": 2, "active": False,
+         "path_before": "", "path_after": "/p/b.rpp", "written": True, "adopted": True,
+         "dirty": False}
     r.update(over)
     r["ok"] = r["adopted"] and not r["dirty"]
     return r
@@ -274,7 +331,7 @@ class TestSaveText(unittest.TestCase):
     def test_in_place(self):
         r = save_result(method="Main_SaveProject", target="/p/a.rpp",
                         path_before="/p/a.rpp", path_after="/p/a.rpp")
-        self.assertEqual(project.render_save(r), "saved in place: /p/a.rpp")
+        self.assertEqual(project.render_save(r), "saved in place: /p/a.rpp (tab 2)")
 
     def test_in_place_that_stayed_dirty_is_not_called_a_success(self):
         r = save_result(method="Main_SaveProject", target="/p/a.rpp",
@@ -294,7 +351,7 @@ class TestSaveText(unittest.TestCase):
     def test_save_as_not_adopted_says_so(self):
         text = project.render_save(save_result(path_after="", adopted=False, dirty=True))
         self.assertIn("wrote /p/b.rpp", text)
-        self.assertIn("the tab is (unsaved)", text)
+        self.assertIn("tab 2 is (unsaved)", text)
         self.assertIn("has unsaved changes", text)
 
     def test_never_claims_a_write_that_did_not_happen(self):
@@ -309,44 +366,78 @@ class TestSaveMain(unittest.TestCase):
     AS = str(Path(tempfile.gettempdir()) / "rondo-test-save.rpp")
 
     def run_save(self, result, *argv):
-        with mock.patch.object(project.reaper, "run_lua_json", return_value=result), \
+        """Reaper mocked: the first Lua call answers the tab list, the second the save."""
+        with mock.patch.object(project.reaper, "run_lua_json",
+                               side_effect=[TABS, result]) as run, \
              mock.patch.object(project._cli, "require_reaper", return_value="7.79"), \
              mock.patch("sys.stdout", new_callable=io.StringIO) as out:
             rc = project.main(["save", *argv])
-        return rc, out.getvalue()
+        return rc, out.getvalue(), run
 
     def test_success_exits_zero_and_prints(self):
-        rc, out = self.run_save(save_result(), "--as", self.AS)
+        rc, out, _ = self.run_save(save_result(), "--as", self.AS, "--project", "2")
         self.assertEqual(rc, 0)
         self.assertIn("saved as", out)
+
+    def test_as_without_project_is_refused_before_reaper(self):
+        with mock.patch.object(project.reaper, "run_lua_json") as run, \
+             self.assertRaises(SystemExit) as c:
+            project.main(["save", "--as", self.AS])
+        self.assertIn("--project", str(c.exception))
+        run.assert_not_called()
+
+    def test_the_tab_is_resolved_first_and_pinned_in_the_lua(self):
+        _, _, run = self.run_save(save_result(), "--as", self.AS,
+                                  "--project", "prototype-1")
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_args_list[0].args[0], project.TABS_LUA)
+        src = run.call_args_list[1].args[0]
+        self.assertIn('local AS, INDEX, EXPECT = "%s", 0, "/m/prototype-1.RPP"'
+                      % Path(self.AS).resolve(), src)
+        self.assertIn("Main_SaveProjectEx(proj, AS, 8)", src)
+
+    def test_the_active_tab_is_not_the_default_for_save_as(self):
+        # nightdrive is the active tab in TABS; naming prototype-1 must pin index 0.
+        _, _, run = self.run_save(save_result(), "--as", self.AS, "--project", "proto")
+        self.assertIn(", 0, ", run.call_args_list[1].args[0].splitlines()[1])
+
+    def test_plain_save_defaults_to_the_active_tab(self):
+        r = save_result(method="Main_SaveProject", target="/m/nightdrive.RPP", tab=1,
+                        active=True, path_before="/m/nightdrive.RPP",
+                        path_after="/m/nightdrive.RPP")
+        with mock.patch.object(project.reaper, "run_lua_json", return_value=r) as run, \
+             mock.patch.object(project._cli, "require_reaper", return_value="7.79"), \
+             mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            rc = project.main(["save"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(run.call_count, 1)
+        self.assertIn("local AS, INDEX, EXPECT = nil, -1, nil", run.call_args.args[0])
+        self.assertIn("saved in place", out.getvalue())
+
+    def test_unknown_project_is_an_error_naming_the_tabs(self):
+        with self.assertRaises(SystemExit) as c:
+            self.run_save(save_result(), "--as", self.AS, "--project", "mixdown")
+        self.assertIn("prototype-1", str(c.exception))
 
     def test_failure_is_a_refusal_on_stderr(self):
         with self.assertRaises(SystemExit) as c:
             self.run_save(save_result(adopted=False, path_after="", dirty=True),
-                          "--as", self.AS)
-        self.assertIn("the tab is (unsaved)", str(c.exception))
+                          "--as", self.AS, "--project", "2")
+        self.assertIn("tab 2 is (unsaved)", str(c.exception))
 
     def test_json_keeps_the_payload_on_stdout_but_exits_nonzero(self):
-        rc, out = self.run_save(save_result(adopted=False, path_after="", dirty=True),
-                                "--as", self.AS, "--json")
+        rc, out, _ = self.run_save(save_result(adopted=False, path_after="", dirty=True),
+                                   "--as", self.AS, "--project", "2", "--json")
         self.assertEqual(rc, 1)
         self.assertFalse(json.loads(out)["ok"])
 
-    def test_lua_gets_option_8_and_the_resolved_path(self):
-        with mock.patch.object(project.reaper, "run_lua_json",
-                               return_value=save_result()) as run, \
-             mock.patch.object(project._cli, "require_reaper", return_value="7.79"), \
-             mock.patch("sys.stdout", new_callable=io.StringIO):
-            project.main(["save", "--as", self.AS])
-        src = run.call_args.args[0]
-        self.assertIn("Main_SaveProjectEx(0, AS, 8)", src)
-        self.assertIn(reaper.lua_str(str(Path(self.AS).resolve())), src)
-
     def test_unwritable_directory_is_refused_before_reaper(self):
         with mock.patch("os.access", return_value=False), \
+             mock.patch.object(project.reaper, "run_lua_json") as run, \
              self.assertRaises(SystemExit) as c:
-            project.main(["save", "--as", self.AS])
+            project.main(["save", "--as", self.AS, "--project", "2"])
         self.assertIn("not writable", str(c.exception))
+        run.assert_not_called()
 
     def test_marker_deletes_by_display_index(self):
         self.assertIn("DeleteProjectMarker(0, idx, isrgn)", project.MARK_LUA)

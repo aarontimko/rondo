@@ -17,6 +17,10 @@ Resolution order for ``--track SPEC`` (documented so it can be relied on):
 A name always beats an index, so a track literally called ``3`` is still
 reachable by name. More than one match at any step is an error naming the
 candidates -- rondo never guesses which track you meant.
+
+``project.py --project`` resolves a project *tab* with the same rule
+(``resolve(spec, names, flag="--project", noun="tab")``), so the two flags
+behave identically and are documented once.
 """
 
 from __future__ import annotations
@@ -95,17 +99,19 @@ def _candidates(names: list[str], idxs: list[int]) -> str:
     return ", ".join(f"{i} {names[i]!r}" for i in idxs)
 
 
-def resolve(spec: str, names: list[str]) -> int:
+def resolve(spec: str, names: list[str], *, flag: str = "--track",
+            noun: str = "track") -> int:
     """``--track SPEC`` + the project's track names -> a 0-based track index.
 
     Raises ``NoSuchTrack`` or ``AmbiguousTrack`` (both ``SystemExit``) with a
-    message that lists what is actually in the project.
+    message that lists what is actually there. ``flag``/``noun`` only change
+    the wording, so ``--project`` can share the rule for tabs.
     """
     spec = str(spec).strip()
     if not spec:
-        raise NoSuchTrack("--track: give a track name or a 0-based index")
+        raise NoSuchTrack(f"{flag}: give a {noun} name or a 0-based index")
     if not names:
-        raise NoSuchTrack(f"--track {spec!r}: the project has no tracks")
+        raise NoSuchTrack(f"{flag} {spec!r}: there are no {noun}s")
 
     low = spec.lower()
     exact = [i for i, n in enumerate(names) if n.lower() == low]
@@ -113,7 +119,7 @@ def resolve(spec: str, names: list[str]) -> int:
         return exact[0]
     if exact:
         raise AmbiguousTrack(
-            f"--track {spec!r} names {len(exact)} tracks: {_candidates(names, exact)}. "
+            f"{flag} {spec!r} names {len(exact)} {noun}s: {_candidates(names, exact)}. "
             "Use the index."
         )
 
@@ -122,8 +128,8 @@ def resolve(spec: str, names: list[str]) -> int:
         if i < len(names):
             return i
         raise NoSuchTrack(
-            f"--track {spec}: no track at index {i}; the project has "
-            f"{len(names)} track(s), 0..{len(names) - 1}"
+            f"{flag} {spec}: no {noun} at index {i}; there are "
+            f"{len(names)} {noun}(s), 0..{len(names) - 1}"
         )
 
     pre = [i for i, n in enumerate(names) if n.lower().startswith(low)]
@@ -131,12 +137,13 @@ def resolve(spec: str, names: list[str]) -> int:
         return pre[0]
     if pre:
         raise AmbiguousTrack(
-            f"--track {spec!r} is a prefix of {len(pre)} tracks: "
+            f"{flag} {spec!r} is a prefix of {len(pre)} {noun}s: "
             f"{_candidates(names, pre)}. Use a longer name or the index."
         )
 
     raise NoSuchTrack(
-        f"--track {spec!r} matches no track. Have: {_candidates(names, list(range(len(names))))}"
+        f"{flag} {spec!r} matches no {noun}. Have: "
+        f"{_candidates(names, list(range(len(names))))}"
     )
 
 
