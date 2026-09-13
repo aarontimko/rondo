@@ -25,6 +25,7 @@ signature so callers can refuse to guess.
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import tempfile
@@ -195,6 +196,48 @@ function track_name(tr)
   local _, n = reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)
   return n
 end
+
+-- Quarter notes -> the 1-based bar that position falls in. Reaper's
+-- second<->QN conversions are floating point, so the end of a region sitting
+-- exactly on a bar line comes back as 95.999999999 instead of 96; snap to the
+-- nearest bar line first. Keep this in step with rondo.reaper.qn_to_bar.
+function qn_to_bar(qn)
+  local b = qn / 4.0
+  local n = math.floor(b + 0.5)
+  if math.abs(b - n) <= 1e-6 then b = n end
+  return math.floor(b) + 1
+end
+
+-- The bar something ENDS on: a length that lands exactly on a bar line belongs
+-- to the bar before it, so an item covering bars 1-8 ends on bar 8, not 9.
+function qn_to_bar_end(qn)
+  local b = qn / 4.0
+  local n = math.floor(b + 0.5)
+  if math.abs(b - n) <= 1e-6 then b = n end
+  return math.max(1, math.ceil(b))
+end
+
+-- Add a region (or marker) of NAME over t0..t1 in SECONDS, first deleting
+-- every region/marker of the same name, so a name is never duplicated.
+-- EnumProjectMarkers' 6th return is the DISPLAY index number, which is what
+-- DeleteProjectMarker wants; deleting renumbers the enumeration, so the walk
+-- restarts from 0 after each hit. Returns (new display index, how many were
+-- replaced).
+function add_marker_replacing(name, t0, t1, is_region)
+  local replaced, i = 0, 0
+  while true do
+    local ok, isrgn, _, _, nm, idx = reaper.EnumProjectMarkers(i)
+    if ok == 0 then break end
+    if isrgn == is_region and nm == name then
+      reaper.DeleteProjectMarker(0, idx, isrgn)
+      replaced = replaced + 1
+      i = 0
+    else
+      i = i + 1
+    end
+  end
+  return reaper.AddProjectMarker2(0, is_region, t0, t1, name, -1, 0), replaced
+end
 """
 
 _RUNNER = r"""
@@ -326,6 +369,29 @@ def qn_to_bars(qn: float) -> tuple[int, float]:
     """Inverse of ``bars_to_qn``. Assumes 4/4. Returns (bar, beat), both 1-based."""
     bar = int(qn // 4) + 1
     return bar, qn - (bar - 1) * 4 + 1.0
+
+
+#: How close to a bar line (in bars) still counts as being ON it. 1e-6 of a bar
+#: is about 2 microseconds at 100 bpm -- far below anything musical, and far
+#: above the float error in Reaper's own conversions.
+BAR_TOLERANCE = 1e-6
+
+
+def qn_to_bar(qn: float, tol: float = BAR_TOLERANCE) -> int:
+    """Quarter notes -> the 1-based bar that position falls in, snapped.
+
+    ``TimeMap2_timeToQN`` is floating point: a region ending exactly on the bar
+    17 line at 100 bpm comes back as 95.999999999 quarter notes, and flooring
+    that reports the region one bar short (the "bars 17-23" bug). Snap to the
+    nearest bar line within ``tol`` first, then floor. The Lua prelude's
+    ``qn_to_bar`` does the same arithmetic for the scripts that count bars
+    inside Reaper.
+    """
+    b = qn / 4.0
+    nearest = round(b)
+    if abs(b - nearest) <= tol:
+        b = float(nearest)
+    return int(math.floor(b)) + 1
 
 
 def project_info(timeout: float = 15.0) -> dict:

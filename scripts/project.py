@@ -66,29 +66,17 @@ end
 log(jsonenc({ metronome = on, changed = changed }))
 """
 
-# EnumProjectMarkers' 6th return is the DISPLAY index number, which is what
-# DeleteProjectMarker wants -- not the enumeration position. Deleting shifts
-# the enumeration, so the walk restarts after each hit.
+# add_marker_replacing (rondo/reaper.py's Lua prelude) is the shared
+# delete-by-display-index-then-add walk. copy_section.py --region uses the same
+# helper, so a region named the same way is replaced there too, never
+# duplicated.
 MARK_LUA = r"""
 local NAME, T0, T1, IS_REGION = %(name)s, %(t0)r, %(t1)r, %(region)s
 
 reaper.Undo_BeginBlock()
-local replaced = 0
-local i = 0
-while true do
-  local ok, isrgn, _, _, name, idx = reaper.EnumProjectMarkers(i)
-  if ok == 0 then break end
-  if isrgn == IS_REGION and name == NAME then
-    reaper.DeleteProjectMarker(0, idx, isrgn)
-    replaced = replaced + 1
-    i = 0
-  else
-    i = i + 1
-  end
-end
 local t0 = reaper.TimeMap2_QNToTime(0, T0)
 local t1 = reaper.TimeMap2_QNToTime(0, T1)
-local idx = reaper.AddProjectMarker2(0, IS_REGION, t0, t1, NAME, -1, 0)
+local idx, replaced = add_marker_replacing(NAME, t0, t1, IS_REGION)
 reaper.Undo_EndBlock("rondo: " .. (IS_REGION and "region " or "marker ") .. NAME, -1)
 reaper.UpdateArrange()
 

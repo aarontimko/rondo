@@ -20,8 +20,11 @@ The script runs with these globals already defined:
   log(...)          write a tab-separated line to the output this command prints
   jsonenc(v)        encode a Lua value as JSON
   bars_to_qn(b, e)  bar/beat (1-based) -> quarter notes, 4/4
+  qn_to_bar(qn)     quarter notes -> 1-based bar, snapped to the bar line
+  qn_to_bar_end(qn) the bar a length ENDS on (a bar line belongs to the bar before)
   find_track(name)  -> track, index  (nil, -1 if absent)
   track_name(tr)    -> string
+  add_marker_replacing(name, t0, t1, is_region) -> index, replaced
 Anything the script raises is reported here as an error, syntax errors included.
 
 This is the only script that does not need the bridge, so it is also the

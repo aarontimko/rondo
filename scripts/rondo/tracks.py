@@ -165,8 +165,8 @@ for t = 0, reaper.CountTracks(0) - 1 do
     end
     items[#items+1] = {
       position = p, length = len, midi_notes = notes,
-      bar = math.floor(reaper.TimeMap2_timeToQN(0, p) / 4) + 1,
-      end_bar = math.ceil(reaper.TimeMap2_timeToQN(0, p + len) / 4),
+      bar = qn_to_bar(reaper.TimeMap2_timeToQN(0, p)),
+      end_bar = qn_to_bar_end(reaper.TimeMap2_timeToQN(0, p + len)),
     }
   end
   rows[#rows+1] = {

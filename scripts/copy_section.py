@@ -22,6 +22,7 @@ from rondo import _cli, reaper  # noqa: E402
 # aliases of the originals.
 LUA = r"""
 local FROM_QN, TO_QN, AT_QN = %(from)r, %(to)r, %(at)r
+local REGION_END_QN = %(region_end)r
 local TRACKS = %(tracks)s          -- nil = every track
 local REGION = %(region)s          -- nil = do not add a region
 
@@ -69,10 +70,15 @@ for t = 0, reaper.CountTracks(0) - 1 do
   end
 end
 
+-- The region is measured in BARS, like everything else, not by adding the
+-- source's duration to the destination time: same helper, same replace-by-name
+-- rule as project.py region.
 local region = nil
 if REGION then
-  local idx = reaper.AddProjectMarker2(0, true, ta, ta + (t1 - t0), REGION, -1, 0)
-  region = { name = REGION, index = idx, start = ta, ["end"] = ta + (t1 - t0) }
+  local rend = reaper.TimeMap2_QNToTime(0, REGION_END_QN)
+  local idx, replaced = add_marker_replacing(REGION, ta, rend, true)
+  region = { name = REGION, index = idx, replaced = replaced,
+             start = ta, ["end"] = rend }
 end
 reaper.Undo_EndBlock("rondo: copy section", -1)
 reaper.UpdateArrange()
@@ -86,7 +92,9 @@ def main(argv=None) -> int:
         description=__doc__.strip().splitlines()[1],
         epilog="Bars are 1-based and --from/--to are inclusive, so --from 1 --to 8 "
                "is the first eight bars. Items that straddle a boundary are NOT "
-               "copied; they are reported instead. 4/4 is assumed.",
+               "copied; they are reported instead. --region replaces a region of "
+               "the same name rather than duplicating it, exactly as project.py "
+               "region does. 4/4 is assumed.",
     )
     ap.add_argument("--from", dest="start", type=int, required=True)
     ap.add_argument("--to", dest="stop", type=int, required=True)
@@ -96,11 +104,13 @@ def main(argv=None) -> int:
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
 
-    if a.stop < a.start:
+    try:
+        from_qn, to_qn = reaper.bar_span_qn(a.start, a.stop)
+    except ValueError:
         raise SystemExit("--to must be >= --from")
-    from_qn = reaper.bars_to_qn(a.start)
-    to_qn = reaper.bars_to_qn(a.stop + 1)
+    span = a.stop - a.start + 1
     at_qn = reaper.bars_to_qn(a.at)
+    region_end_qn = reaper.bars_to_qn(a.at + span)
     if from_qn <= at_qn < to_qn:
         raise SystemExit("--at lands inside the source range; that would copy onto itself")
 
@@ -108,6 +118,7 @@ def main(argv=None) -> int:
     _cli.require_reaper()
     r = reaper.run_lua_json(LUA % {
         "from": from_qn, "to": to_qn, "at": at_qn,
+        "region_end": region_end_qn,
         "tracks": reaper.lua_value(tracks) if tracks else "nil",
         "region": reaper.lua_str(a.region) if a.region else "nil",
     }, timeout=45.0)
@@ -115,7 +126,6 @@ def main(argv=None) -> int:
     if a.json:
         print(json.dumps(r, indent=2))
     else:
-        span = a.stop - a.start + 1
         print(f"copied {r['copied']} item(s) from bars {a.start}-{a.stop} "
               f"to bars {a.at}-{a.at + span - 1}")
         for row in r["tracks"]:
@@ -125,8 +135,11 @@ def main(argv=None) -> int:
                 print(f"  track {row['index']:>2} {row['track']}: "
                       f"{row['copied']} item(s){extra}")
         if r.get("region"):
-            print(f"  region {r['region']['name']!r} at "
-                  f"{r['region']['start']:.2f}s..{r['region']['end']:.2f}s")
+            reg = r["region"]
+            print(f"  region {reg['name']!r} over bars {a.at}-{a.at + span - 1} "
+                  f"({reg['start']:.2f}s..{reg['end']:.2f}s)"
+                  + (f", replaced {reg['replaced']} of the same name"
+                     if reg.get("replaced") else ""))
     return 0
 
 

@@ -1,4 +1,4 @@
-"""Argument parsing and Lua generation for track.py and project.py.
+"""Argument parsing and Lua generation for track.py, project.py, copy_section.py.
 
 Everything here stops short of ``run_lua``: it checks that the parsers accept
 what the docs promise, refuse what they should, and that the generated Lua is
@@ -13,6 +13,7 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 
+import copy_section  # noqa: E402
 import project  # noqa: E402
 import track  # noqa: E402
 from rondo import reaper  # noqa: E402
@@ -246,7 +247,47 @@ class TestProjectLua(unittest.TestCase):
         self.assertIn("Main_SaveProject(0, false)", project.SAVE_LUA)
 
     def test_marker_deletes_by_display_index(self):
-        self.assertIn("DeleteProjectMarker(0, idx, isrgn)", project.MARK_LUA)
+        # the walk lives in the Lua prelude now, so copy_section.py --region
+        # replaces a same-named region exactly the way project.py region does.
+        self.assertIn("add_marker_replacing(NAME, t0, t1, IS_REGION)", project.MARK_LUA)
+        self.assertIn("DeleteProjectMarker(0, idx, isrgn)", reaper.LUA_PRELUDE)
+        self.assertIn("AddProjectMarker2(0, is_region, t0, t1, name, -1, 0)",
+                      reaper.LUA_PRELUDE)
+
+
+class TestCopySectionRegion(unittest.TestCase):
+    def src(self, start=1, stop=8, at=17, region='"A3"'):
+        span = stop - start + 1
+        t0, t1 = reaper.bar_span_qn(start, stop)
+        return copy_section.LUA % {
+            "from": t0, "to": t1, "at": reaper.bars_to_qn(at),
+            "region_end": reaper.bars_to_qn(at + span),
+            "tracks": "nil", "region": region,
+        }
+
+    def test_no_unsubstituted_placeholders(self):
+        for src in (self.src(), self.src(region="nil")):
+            self.assertNotRegex(src, r"%\(\w+\)")
+            self.assertIn("log(jsonenc(", src)
+
+    def test_the_region_is_measured_in_bars_not_by_adding_a_duration(self):
+        src = self.src(start=1, stop=8, at=17)
+        self.assertIn("local FROM_QN, TO_QN, AT_QN = 0.0, 32.0, 64.0", src)
+        self.assertIn("local REGION_END_QN = 96.0", src)     # bars 17-24
+        self.assertIn("TimeMap2_QNToTime(0, REGION_END_QN)", src)
+
+    def test_it_replaces_a_same_named_region_like_project_py_does(self):
+        self.assertIn("add_marker_replacing(REGION, ta, rend, true)", self.src())
+        self.assertNotIn("AddProjectMarker2", copy_section.LUA)
+
+    def test_a_backwards_range_is_refused_before_reaper_is_touched(self):
+        with self.assertRaises(SystemExit):
+            copy_section.main(["--from", "8", "--to", "1", "--at", "17"])
+
+    def test_copying_onto_itself_is_refused(self):
+        with self.assertRaises(SystemExit) as c:
+            copy_section.main(["--from", "1", "--to", "8", "--at", "4"])
+        self.assertIn("inside the source range", str(c.exception))
 
 
 if __name__ == "__main__":
