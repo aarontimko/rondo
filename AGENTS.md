@@ -28,8 +28,25 @@ python scripts/render.py --from 1 --to 8 --out /private/tmp/take.wav   # listen
 
 `track.py` and `project.py` are the small moves in between: `track.py show
 --track Pad`, `track.py mute --track 3`, `project.py region --name A --from 1
---to 8`. `--track` takes a name (case-insensitive, exact then prefix) or a
-0-based index, and an ambiguous name is an error rather than a guess.
+--to 8`. **Every** `--track` / `--tracks` flag resolves the same way, in
+Python, before any Lua runs: case-insensitive **exact name**, then exact
+**role** (the name with its trailing ` (...)` suffix removed, so `--track Pad`
+finds `Pad (Surge: MKS-70 Warm Pad)`), then **0-based index**, then **prefix**.
+An ambiguous spec is an error listing the candidates, never a guess. The
+scripts that *create* the track when they cannot find it --
+`add_instrument.py`, `build_kit.py`, `record.py` -- stop before the prefix
+step, so `--track Lead` creates `Lead` instead of landing on `Lead Harmony`.
+The rule is `rondo.tracks.resolve`, documented in that module; `--project` and
+`automate.py`'s `--fx` / `--param` are the same function with different knobs.
+
+Track names teach the instrument. `add_instrument.py` renames the track it
+loads onto to `Role (Instrument: Patch)` -- `Pad (Surge: MKS-70 Warm Pad)`,
+`Bass (Dexed: E BASS 1)`, `Keys (GM Piano)` -- and `build_kit.py` names its
+track `Drums (RS5K kit: <kit>)`, so Reaper's track list says what is making
+each sound. Loading a new patch replaces the suffix rather than stacking
+another one on; the role in front of it is never touched. Pass `--keep-name` to
+skip the rename, and use `track.py rename --to` when you want a name rondo will
+not touch -- a human rename is final.
 
 Every script takes `--json` where machine output helps, and `--help` always
 tells the truth. Scripts act on the **active project tab**, with one
