@@ -19,28 +19,36 @@ from rondo import _cli, reaper  # noqa: E402
 
 # Main_SaveProject(0, false) saves in place and CLEARS the dirty flag, but only
 # once the tab has a filename; on an unnamed tab it would open a Save As
-# dialog, which rondo never does. Main_SaveProjectEx(0, path, 0) writes a COPY:
-# the tab keeps its own identity and stays dirty. Both are reported honestly.
+# dialog, which rondo never does. Main_SaveProjectEx(0, path, 8) is Save As
+# without the dialog: option &8 ("set as the new project filename for this
+# ReaProject", verified on 7.79) makes the tab adopt the path and clears the
+# dirty flag, and nothing is reloaded, so the bridge survives and the undo
+# history stays. Options 0 would only write a copy. Both are reported honestly.
+SAVE_AS_OPTIONS = 8
+
 SAVE_LUA = r"""
 local AS = %(as)s
 local _, before = reaper.EnumProjects(-1, "")
 local method, target
 if AS then
-  reaper.Main_SaveProjectEx(0, AS, 0)
+  reaper.Main_SaveProjectEx(0, AS, %(options)d)
   method, target = "Main_SaveProjectEx", AS
 else
   if before == nil or before == "" then
     error("this tab has no filename yet, so a plain save would open a Save As "
-          .. "dialog. Give --as PATH (that writes a copy) or save it once by hand.", 0)
+          .. "dialog. Give --as PATH (the tab adopts it, no dialog) or save it once by hand.", 0)
   end
   reaper.Main_SaveProject(0, false)
   method, target = "Main_SaveProject", before
 end
 local _, after = reaper.EnumProjects(-1, "")
+local adopted = after ~= "" and after == target
+local dirty = reaper.IsProjectDirty(0) == 1
 log(jsonenc({ method = method, target = target,
               path_before = before, path_after = after,
-              adopted = after ~= "" and after == target,
-              dirty = reaper.IsProjectDirty(0) == 1 }))
+              written = reaper.file_exists(target),
+              adopted = adopted, dirty = dirty,
+              ok = adopted and not dirty }))
 """
 
 # seekplay = false: this moves the EDIT cursor only. rondo never touches the
@@ -110,8 +118,8 @@ local tabs, i = {}, 0
 while true do
   local proj, path = reaper.EnumProjects(i, "")
   if not proj then break end
-  -- A tab saved only via Main_SaveProjectEx keeps an EMPTY name and path here:
-  -- Reaper wrote a copy, it did not adopt the file.
+  -- A tab saved via Main_SaveProjectEx WITHOUT option &8 keeps an EMPTY name
+  -- and path here: Reaper wrote a copy, it did not adopt the file.
   local _, name = reaper.GetSetProjectInfo_String(proj, "PROJECT_NAME", "", false)
   tabs[#tabs+1] = { index = i, name = name, path = path,
                     active = proj == active,
@@ -153,9 +161,10 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--json", action="store_true")
         return p
 
-    add("save", "Save the project (or write a copy with --as).").add_argument(
+    add("save", "Save the project in place, or Save As with --as.").add_argument(
         "--as", dest="as_path", metavar="PATH",
-        help="write a copy to PATH.rpp; the tab keeps its own identity")
+        help="save as PATH (must end in .rpp): the tab adopts that filename, no dialog. "
+             "On a tab that already has a filename this is a rename, and the output says so.")
     p = add("cursor", "Move the edit cursor to a bar.")
     p.add_argument("--bar", type=int, required=True)
     p.add_argument("--beat", type=float, default=1.0, help="1-based, so 1 is the downbeat")
@@ -172,6 +181,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--bpm", type=float, required=True)
     add("tabs", "List the open project tabs.")
     return ap
+
+
+def render_save(r: dict) -> str:
+    """One line saying what the save did, and whether the tab now owns the file.
+
+    Success means the tab's path is the target AND the dirty flag is clear;
+    anything else is described from the fields Reaper reported, so the text
+    never claims a write that did not happen.
+    """
+    tab = (f"the tab is {r['path_after'] or '(unsaved)'} and "
+           f"{'has' if r['dirty'] else 'has no'} unsaved changes")
+    if r["method"] == "Main_SaveProject":
+        if r["ok"]:
+            return f"saved in place: {r['target']}"
+        return f"save in place of {r['target']} did not stick: {tab}"
+    if r["ok"]:
+        renamed = r["path_before"] and r["path_before"] != r["target"]
+        return (f"saved as {r['target']}; the tab now has that name and no unsaved changes"
+                + (f" (it was {r['path_before']})" if renamed else ""))
+    wrote = "wrote" if r["written"] else "did NOT write"
+    return f"{wrote} {r['target']}, and {tab}"
 
 
 def render_tabs(tabs: list[dict]) -> str:
@@ -193,7 +223,15 @@ def main(argv=None) -> int:
     as_path = None
     if a.command == "save" and a.as_path:
         as_path = guard_project_path(a.as_path)
-        as_path.parent.mkdir(parents=True, exist_ok=True)
+        # Reaper's own behaviour on an unwritable directory is unverified (it
+        # may show an error box), so refuse here and never find out.
+        try:
+            as_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            raise SystemExit(f"cannot create {as_path.parent}: {e.strerror or e}")
+        if not os.access(as_path.parent, os.W_OK):
+            raise SystemExit(f"{as_path.parent} is not writable, so Reaper could not "
+                             "save there")
     if a.command == "region":
         # raises ValueError if --to is before --from
         try:
@@ -207,17 +245,15 @@ def main(argv=None) -> int:
 
     if a.command == "save":
         r = reaper.run_lua_json(
-            SAVE_LUA % {"as": reaper.lua_str(str(as_path)) if as_path else "nil"},
+            SAVE_LUA % {"as": reaper.lua_str(str(as_path)) if as_path else "nil",
+                        "options": SAVE_AS_OPTIONS},
             timeout=60.0)
         if a.json:
             print(json.dumps(r, indent=2))
-        elif r["method"] == "Main_SaveProject":
-            print(f"saved in place: {r['target']}"
-                  + ("" if not r["dirty"] else "  (still dirty?)"))
-        else:
-            print(f"wrote a COPY to {r['target']} (Main_SaveProjectEx). "
-                  f"The tab still is {r['path_after'] or '(unsaved)'} and "
-                  f"{'has' if r['dirty'] else 'has no'} unsaved changes.")
+            return 0 if r["ok"] else 1
+        if not r["ok"]:
+            raise SystemExit(render_save(r))     # stderr, exit 1, like every other refusal
+        print(render_save(r))
         return 0
 
     if a.command == "cursor":

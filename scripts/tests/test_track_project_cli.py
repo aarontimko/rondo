@@ -5,10 +5,14 @@ what the docs promise, refuse what they should, and that the generated Lua is
 well formed (no leftover ``%(...)s``, the right API call, the right numbers).
 """
 
+import io
+import json
 import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
@@ -221,8 +225,8 @@ class TestProjectPathGuard(unittest.TestCase):
 class TestProjectLua(unittest.TestCase):
     def test_no_unsubstituted_placeholders(self):
         for src in (
-            project.SAVE_LUA % {"as": "nil"},
-            project.SAVE_LUA % {"as": '"/tmp/x.rpp"'},
+            project.SAVE_LUA % {"as": "nil", "options": project.SAVE_AS_OPTIONS},
+            project.SAVE_LUA % {"as": '"/tmp/x.rpp"', "options": project.SAVE_AS_OPTIONS},
             project.CURSOR_LUA % {"qn": 32.0},
             project.METRONOME_LUA % {"want": "true"},
             project.MARK_LUA % {"name": '"B"', "t0": 32.0, "t1": 64.0,
@@ -244,6 +248,105 @@ class TestProjectLua(unittest.TestCase):
     def test_save_picks_the_right_call_for_each_case(self):
         self.assertIn("Main_SaveProjectEx", project.SAVE_LUA)
         self.assertIn("Main_SaveProject(0, false)", project.SAVE_LUA)
+
+    def test_save_as_uses_the_adopt_filename_option(self):
+        # Main_SaveProjectEx option &8 = "set as the new project filename for
+        # this ReaProject" (verified on Reaper 7.79). Without it Reaper writes a
+        # copy and the tab stays "(unsaved)" and dirty.
+        self.assertEqual(project.SAVE_AS_OPTIONS & 8, 8)
+        src = project.SAVE_LUA % {"as": '"/tmp/x.rpp"', "options": project.SAVE_AS_OPTIONS}
+        self.assertIn("reaper.Main_SaveProjectEx(0, AS, 8)", src)
+        # Nothing reloads the project: that would stop the bridge's defer loop.
+        self.assertNotIn("Main_openProject", src)
+
+
+
+def save_result(**over):
+    """What SAVE_LUA logs on a clean save-as of an unnamed tab, with overrides."""
+    r = {"method": "Main_SaveProjectEx", "target": "/p/b.rpp", "path_before": "",
+         "path_after": "/p/b.rpp", "written": True, "adopted": True, "dirty": False}
+    r.update(over)
+    r["ok"] = r["adopted"] and not r["dirty"]
+    return r
+
+
+class TestSaveText(unittest.TestCase):
+    def test_in_place(self):
+        r = save_result(method="Main_SaveProject", target="/p/a.rpp",
+                        path_before="/p/a.rpp", path_after="/p/a.rpp")
+        self.assertEqual(project.render_save(r), "saved in place: /p/a.rpp")
+
+    def test_in_place_that_stayed_dirty_is_not_called_a_success(self):
+        r = save_result(method="Main_SaveProject", target="/p/a.rpp",
+                        path_before="/p/a.rpp", path_after="/p/a.rpp", dirty=True)
+        self.assertIn("did not stick", project.render_save(r))
+
+    def test_save_as_adopted(self):
+        text = project.render_save(save_result())
+        self.assertIn("saved as /p/b.rpp", text)
+        self.assertIn("now has that name", text)
+        self.assertNotIn("it was", text)
+
+    def test_save_as_on_a_named_tab_reports_the_rename(self):
+        text = project.render_save(save_result(path_before="/p/a.rpp"))
+        self.assertIn("(it was /p/a.rpp)", text)
+
+    def test_save_as_not_adopted_says_so(self):
+        text = project.render_save(save_result(path_after="", adopted=False, dirty=True))
+        self.assertIn("wrote /p/b.rpp", text)
+        self.assertIn("the tab is (unsaved)", text)
+        self.assertIn("has unsaved changes", text)
+
+    def test_never_claims_a_write_that_did_not_happen(self):
+        text = project.render_save(save_result(written=False, path_after="",
+                                               adopted=False, dirty=True))
+        self.assertIn("did NOT write /p/b.rpp", text)
+
+
+class TestSaveMain(unittest.TestCase):
+    """main()'s exit code and streams, with Reaper mocked out."""
+
+    AS = str(Path(tempfile.gettempdir()) / "rondo-test-save.rpp")
+
+    def run_save(self, result, *argv):
+        with mock.patch.object(project.reaper, "run_lua_json", return_value=result), \
+             mock.patch.object(project._cli, "require_reaper", return_value="7.79"), \
+             mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            rc = project.main(["save", *argv])
+        return rc, out.getvalue()
+
+    def test_success_exits_zero_and_prints(self):
+        rc, out = self.run_save(save_result(), "--as", self.AS)
+        self.assertEqual(rc, 0)
+        self.assertIn("saved as", out)
+
+    def test_failure_is_a_refusal_on_stderr(self):
+        with self.assertRaises(SystemExit) as c:
+            self.run_save(save_result(adopted=False, path_after="", dirty=True),
+                          "--as", self.AS)
+        self.assertIn("the tab is (unsaved)", str(c.exception))
+
+    def test_json_keeps_the_payload_on_stdout_but_exits_nonzero(self):
+        rc, out = self.run_save(save_result(adopted=False, path_after="", dirty=True),
+                                "--as", self.AS, "--json")
+        self.assertEqual(rc, 1)
+        self.assertFalse(json.loads(out)["ok"])
+
+    def test_lua_gets_option_8_and_the_resolved_path(self):
+        with mock.patch.object(project.reaper, "run_lua_json",
+                               return_value=save_result()) as run, \
+             mock.patch.object(project._cli, "require_reaper", return_value="7.79"), \
+             mock.patch("sys.stdout", new_callable=io.StringIO):
+            project.main(["save", "--as", self.AS])
+        src = run.call_args.args[0]
+        self.assertIn("Main_SaveProjectEx(0, AS, 8)", src)
+        self.assertIn(reaper.lua_str(str(Path(self.AS).resolve())), src)
+
+    def test_unwritable_directory_is_refused_before_reaper(self):
+        with mock.patch("os.access", return_value=False), \
+             self.assertRaises(SystemExit) as c:
+            project.main(["save", "--as", self.AS])
+        self.assertIn("not writable", str(c.exception))
 
     def test_marker_deletes_by_display_index(self):
         self.assertIn("DeleteProjectMarker(0, idx, isrgn)", project.MARK_LUA)

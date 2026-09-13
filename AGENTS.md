@@ -65,7 +65,8 @@ Regenerate this table with `python scripts/index.py --write`;
 actually behaves: the exact `TrackFX_AddByName` strings, the `.fxp` ->
 `.vstpreset` byte layout that makes Surge patches loadable, the RS5K parameter
 map, the synchronous render action, and the traps (`"AU: Surge XT"` loads the
-wrong plugin; `Main_SaveProjectEx` does not clear the dirty flag). Read it
+wrong plugin; `Main_SaveProjectEx` without option `&8` does not clear the dirty
+flag). Read it
 before writing any new ReaScript, and trust it over your own recollection.
 
 ### The grid note format
@@ -87,10 +88,12 @@ when you need to write, correct, or generate a melody.
   `reaper.ini` / the plugin caches and using the bridge mailbox directory.
 * **Never work in the user's open project when testing.** Open a new tab
   (`Main_OnCommand(40859, 0)`), do everything there, then
-  `Main_openProject("noprompt:<temp>.rpp")` and `Main_OnCommand(40860, 0)` to
+  `Main_SaveProjectEx(0, "/private/tmp/<temp>.rpp", 8)` (the tab adopts the
+  file and is clean; the bridge survives) and `Main_OnCommand(40860, 0)` to
   close it without a save prompt. Check `status.py`'s tab list before and
-  after. If something goes wrong, stop and say so rather than improvising in
-  the user's project.
+  after, and check the active tab's path before acting: the user may switch
+  tabs while you work. If something goes wrong, stop and say so rather than
+  improvising in the user's project.
 * **No dialogs.** Renders stay on action `42230` with `RENDER_ADDTOPROJ 0`.
 * **rondo never moves the transport.** It sets a track up; the human presses
   record and play.
