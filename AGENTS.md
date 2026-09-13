@@ -42,6 +42,7 @@ Unit tests: `python -m unittest discover -s scripts/tests`.
 | task | what it does | needs |
 | --- | --- | --- |
 | `scripts/add_instrument.py` | Find or create a track and load Surge XT, Dexed or the Apple GM piano on it, optionally with a patch. | reaper-running |
+| `scripts/automate.py` | Draw a volume or FX-parameter automation envelope over a bar range, read the envelopes back, or clear them. | reaper-running |
 | `scripts/build_kit.py` | Build a ReaSamplOmatic5000 drum kit on one track from a note-to-wav manifest. | reaper-running, samples |
 | `scripts/copy_section.py` | Copy bars X..Y to bar Z on every track (or named tracks) and optionally name the result as a region. | reaper-running |
 | `scripts/hum_to_grid.py` | Transcribe a hummed or sung wav into rondo grid text you can feed to write-notes. | librosa |
@@ -91,6 +92,19 @@ when you need to write, correct, or generate a melody.
   close it without a save prompt. Check `status.py`'s tab list before and
   after. If something goes wrong, stop and say so rather than improvising in
   the user's project.
+* **Never close a tab without checking which one is active.** `40860` closes
+  whatever tab is ACTIVE at that instant, not the tab your script opened, and
+  the active tab changes under you -- the user clicks, another agent opens a
+  tab. So: record the active project with `EnumProjects(-1, "")` before you
+  open your scratch tab; give the scratch tab a filename of its own
+  (`Main_SaveProjectEx` then `Main_openProject("noprompt:...")`) so you can
+  recognise it by exact path; before closing, `SelectProjectInstance(<your
+  scratch project>)` and verify with `EnumProjects(-1, "")` that the active
+  tab's path really is your scratch file -- if it is not, do NOT close, stop
+  and report; after closing, `SelectProjectInstance(<the project that was
+  active>)` and verify by name. Same rule for writing: select your tab,
+  write, and hand the user's tab back inside ONE script, so no tab switch can
+  land between the select and the write.
 * **No dialogs.** Renders stay on action `42230` with `RENDER_ADDTOPROJ 0`.
 * **rondo never moves the transport.** It sets a track up; the human presses
   record and play.

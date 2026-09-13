@@ -72,6 +72,18 @@ which also gives it free `O_EXCL` slot allocation.
   path now exists, so the blank-the-tab trap above cannot fire), and from there
   a plain save is silent and `Main_OnCommand(40860, 0)` closes without a
   prompt.
+* **`40860` closes the ACTIVE tab, not "your" tab.** Nothing about the action
+  is scoped to the project your script opened; it acts on whatever
+  `EnumProjects(-1, "")` returns at that instant, and that changes under you
+  (the user clicks a tab, another agent opens one). Same for `40859`: the new
+  tab becomes active, so anything you do afterwards lands wherever the active
+  tab happens to be by then. The safe shape is one synchronous script that
+  records the active project, `SelectProjectInstance`s its own tab, verifies
+  `EnumProjects(-1, "")` by exact path, does the work, and hands the original
+  tab back -- Reaper runs it on the main thread, so nothing can interleave.
+  `Main_OnCommandEx(cmd, flag, proj)` takes a project pointer but most actions
+  ignore it; `InsertTrackInProject`, `CountTracks(proj)` and the track-pointer
+  APIs genuinely are project-explicit.
 * `error(msg, 0)` raises without Lua's `body_xxx.lua:26:` prefix, so the
   message `LuaError` carries reads like a CLI error instead of a traceback.
   The new scripts use it; the older ones do not.
@@ -216,6 +228,67 @@ GUID-addressable `AddRegionOrMarker` family is preferred in 7.79 docs and
 matters once sections start shifting, but `AddProjectMarker2` is what is
 verified here.
 
+`AddProjectMarker2` happily creates a **second** region with a name that is
+already taken, so naming the same section twice leaves duplicates behind.
+`project.py region` and `copy_section.py --region` both go through the
+`add_marker_replacing(name, t0, t1, is_region)` prelude helper, which deletes
+every same-named region first (`DeleteProjectMarker(0, idx, isrgn)` -- note
+that is the **display index** from `EnumProjectMarkers`' sixth return value,
+not the enumeration index) and then adds one.
+
+## Automation envelopes
+
+Verified against a Surge XT track in a scratch tab.
+
+* **Track volume envelope**: `GetTrackEnvelopeByName(tr, "Volume")`. It does
+  not exist until something creates it -- `Main_OnCommand(40406, 0)` ("Toggle
+  track volume envelope visible") creates *and* shows it for the **selected**
+  tracks, so save and restore the selection around it.
+  `GetTrackEnvelopeByChunkName(tr, "VOLENV2")` does **not** find it here even
+  though `GetEnvelopeName` reports the chunk name as `VOLENV2`.
+* **Envelope values are in the envelope's own units, not yours.**
+  `GetEnvelopeScalingMode(env)` returns 1 for a track volume envelope, where
+  unity gain is stored as **716.2178503**, not 1.0. Always go through
+  `ScaleToEnvelopeMode(mode, v)` on the way in and `ScaleFromEnvelopeMode(mode,
+  v)` on the way out; the scaled-out value is then plain linear gain, the same
+  units as `D_VOL`, so rondo's `db_to_gain` / `gain_to_db` apply unchanged.
+  Round trip checked at -18, 0 and +18 dB. This is a normal (post-FX) volume
+  envelope; the pre-FX one is a separate envelope named `Volume (Pre-FX)`.
+* **FX parameter envelopes**: `GetFXEnvelope(tr, fx, param, true)` creates the
+  envelope if it is missing (there is no "did you create it" return, so count
+  `CountTrackEnvelopes` before and after). Scaling mode is 0 and the stored
+  value is the plugin's normalised **0..1**, so no conversion is needed. The
+  envelope's name is `"<param> / <fx> / <group>"`, e.g.
+  `A Filter 1 Cutoff / Surge XT / A Filters`.
+* `Envelope_FormatValue(env, value, "")` returns **one** string (not the usual
+  `ok, str` pair) and wants the **raw** value, before `ScaleFromEnvelopeMode`.
+  It gives `-18.0dB` for a volume envelope and `61.74 Hz` for Surge's cutoff,
+  which is what makes `automate.py show` readable.
+* Point shapes for `InsertEnvelopePoint(env, time, value, shape, tension,
+  selected, noSort)`: 0 linear, 1 square, 2 slow start/end, 3 fast start, 4
+  fast end, 5 bezier. The shape belongs to the point the segment starts from,
+  so only the **first** point of a ramp needs it.
+* **`DeleteEnvelopePointRange` leaves a point sitting at exactly time 0
+  behind**, whatever range you pass (`-1.0, 1e12` included). So a "clear
+  everything" reports one point left, and redrawing over bar 1 stacks a second
+  point on the same time. `DeleteEnvelopePointEx(env, -1, index)` does delete
+  it, so `automate.py` sweeps the range by index afterwards and really does
+  reach zero points.
+* With zero points an envelope is not "off": it evaluates to the underlying
+  value (the fader, or the plugin's own parameter), which is why a cleared
+  cutoff envelope reads back as the patch's own cutoff.
+* `Envelope_Evaluate(env, time, samplerate, 0)` returns `retval, value, ...`;
+  read the value **before** deleting anything if you want to restate it. That
+  is how `automate.py` writes its guard point just before `--from`: without a
+  point holding the previous value, a ramp drags every earlier bar with it.
+* `Envelope_SortPoints(env)` after inserting with `noSort = true`, then
+  `UpdateArrange()`.
+* Useful Surge XT parameter indices on this machine (2858 parameters, so
+  resolve by name): 319 `A Filter 1 Cutoff`, 320 `A Filter 1 Resonance`, 237
+  `A Volume`, 12 `Global Volume`, 592 `B Filter 1 Cutoff`, 510 `B Volume`.
+  `cutoff` alone matches four parameters -- filter 1 and 2 of both scenes --
+  so name matching has to refuse ambiguity rather than pick.
+
 ## Rendering
 
 ```lua
@@ -278,5 +351,11 @@ AirPods used as an input drop to a 24 kHz phone profile. Use a real mic.
   `reaper-clap-macos-aarch64.ini` existing.
 * `reaper -renderproject` with VSTis, and any headless mode on macOS.
 * Whether `AddRegionOrMarker` behaves the same as `AddProjectMarker2` here.
+* Envelope shapes beyond 0/3/4: rondo exposes linear, fast-start and fast-end
+  only, and bezier tension is never set.
+* Whether a **pre-FX** volume envelope uses the same scaling mode as the
+  post-FX one; only the post-FX envelope has been exercised.
+* Tempo changes inside an automated range: every time is computed with
+  `TimeMap2_QNToTime`, so it should follow the tempo map, but it is untested.
 * Time signatures other than 4/4: every bar<->quarter-note conversion in rondo
   assumes 4/4. `status.py` reports the real time signature so you can notice.
