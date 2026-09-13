@@ -393,8 +393,8 @@ class TestSaveMain(unittest.TestCase):
         self.assertEqual(run.call_count, 2)
         self.assertEqual(run.call_args_list[0].args[0], project.TABS_LUA)
         src = run.call_args_list[1].args[0]
-        self.assertIn('local AS, INDEX, EXPECT = "%s", 0, "/m/prototype-1.RPP"'
-                      % Path(self.AS).resolve(), src)
+        self.assertIn(f'local AS, INDEX, EXPECT = "{Path(self.AS).resolve()}", 0, "/m/prototype-1.RPP"',
+                      src)
         self.assertIn("Main_SaveProjectEx(proj, AS, 8)", src)
 
     def test_the_active_tab_is_not_the_default_for_save_as(self):

@@ -514,7 +514,7 @@ def main(argv=None) -> int:
         if a.json:
             print(json.dumps(r, indent=2))
         else:
-            what = ("swell into bar %d" % a.into) if a.command == "swell" else "volume"
+            what = f"swell into bar {a.into}" if a.command == "swell" else "volume"
             print(f"track {r['index']} \"{r['track']}\" {what}: bars {start}-{stop}, "
                   f"{db0:+.1f} -> {db1:+.1f} dB ({a.shape})"
                   + (", envelope created" if r["created"] else ""))

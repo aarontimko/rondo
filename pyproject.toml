@@ -22,3 +22,16 @@ include = ["rondo*"]
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E402", "E741"]  # E402: scripts bootstrap sys.path before importing rondo; E741: short math names in grid code
+
+[tool.ruff.lint.per-file-ignores]
+# The docstring header (summary/usage lines) is parsed by index.py; one line each.
+"scripts/*.py" = ["E501"]
