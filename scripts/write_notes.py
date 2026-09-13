@@ -14,7 +14,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rondo import _cli, grid as gridmod, reaper, tracks  # noqa: E402
+from rondo import _cli, reaper, tracks  # noqa: E402
+from rondo import grid as gridmod
 
 # The track arrives as an INDEX: write_notes resolves --track in Python
 # (rondo/tracks.py) against a snapshot it reads first, so "--track 6",

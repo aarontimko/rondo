@@ -30,7 +30,8 @@ measured in grid slots.
 from __future__ import annotations
 
 import re
-from typing import Iterable, NamedTuple
+from collections.abc import Iterable
+from typing import NamedTuple
 
 DEFAULT_OCTAVE = 4
 DEFAULT_SLOTS_PER_BAR = 8
