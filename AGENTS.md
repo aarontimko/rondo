@@ -56,7 +56,8 @@ pointer, so "save the prototype file as take2" is `project.py tabs` to see
 what is open, then `project.py save --as ~/songs/take2.rpp --project
 prototype-1`, whatever tab the human is looking at.
 
-Unit tests: `python -m unittest discover -s scripts/tests`.
+Unit tests: `python -m unittest discover -s scripts/tests`. Lint: `uvx ruff check scripts`.
+CI runs both on Ubuntu plus `python scripts/index.py --check`.
 
 ## Tasks
 

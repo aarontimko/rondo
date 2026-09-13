@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  unit:
+    # The scripts are stdlib-only, so the tests run anywhere Python does.
+    # macOS is where rondo is used (Reaper is mocked here); it joins the matrix
+    # once the repository is public and the minutes are free.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m unittest discover -s scripts/tests -v
+      - run: python scripts/index.py --check
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: check scripts
