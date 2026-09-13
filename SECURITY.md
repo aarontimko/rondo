@@ -8,7 +8,7 @@
 | any earlier release | no, upgrade to the latest minor |
 | pre-release builds from `main` | no |
 
-No release yet; `main` is pre-release.
+The first supported release is `v0.1.0`.
 
 ## Reporting a vulnerability
 
