@@ -18,6 +18,14 @@ from exactly that; two or three minutes later there is a song with named
 sections, instruments and automation in your Reaper project, ready to play,
 edit and keep.
 
+The conversation carries on from there. "I don't like the bridge, give me five
+alternates" puts five variations on muted tracks so you can unmute each and
+compare; "keep number three and delete the rest" promotes the winner. "Make the
+pad swell into the chorus", "try a key change in the bridge", "save this as
+take two and try a faster tempo" are all the same loop: you say what you hear,
+the scripts change the project, and you listen again.
+[`docs/tutorial.md`](docs/tutorial.md) walks through one whole session that way.
+
 
 ## Who it is for
 
