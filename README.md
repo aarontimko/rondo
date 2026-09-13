@@ -75,11 +75,15 @@ uv pip install -e '.[transcribe]'
 ```
 
 You also need Reaper running on macOS with a project open, the instruments you
-want to load (Surge XT and Dexed are free), and the `reaper_mcp_bridge.lua`
-ReaScript loaded once per Reaper launch. The bridge is a third-party script that
-rondo does not ship: put it in Reaper's `Scripts` folder and load it with
+want to load (Surge XT and Dexed are free), and the bridge script loaded once per
+Reaper launch. The bridge is `reaper_mcp_bridge.lua` from
+[TwelveTake's reaper-mcp](https://github.com/TwelveTake-Studios/reaper-mcp)
+(MIT), a ReaScript that reads requests from a folder and runs them inside Reaper.
+rondo does not ship it; install it into Reaper's `Scripts` folder with the
+upstream installer, then load it:
 
 ```sh
+uvx twelvetake-reaper-mcp --install-bridge
 open -a REAPER ~/"Library/Application Support/REAPER/Scripts/reaper_mcp_bridge.lua"
 ```
 
