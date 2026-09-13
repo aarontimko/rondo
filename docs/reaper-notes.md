@@ -48,14 +48,26 @@ which also gives it free `O_EXCL` slot allocation.
 * A `ReaProject` argument of `0` means **the active project tab**, not tab 0.
   Tab pointers come from `EnumProjects(index)`; `EnumProjects(-1)` is the
   active one. Every rondo script operates on the active tab.
-* `Main_SaveProjectEx(0, path, 0)` writes a **copy**. It does not give the tab
-  a filename and does not clear the dirty flag, so `GetSetProjectInfo_String(_,
-  "PROJECT_NAME")` and `EnumProjects`' path stay empty and closing the tab
-  still prompts.
-* To close a scratch tab silently: `Main_openProject("noprompt:" .. path)`
-  (adopts the file, clears dirty, stays in the same tab), then
+* **Save As without a dialog: `Main_SaveProjectEx(0, path, 8)`.** Option `&8`
+  is documented in Reaper's own API text as "if not saving template, set as
+  the new project filename for this ReaProject", and it does exactly that
+  (verified 2026-09 on 7.79): the tab adopts `path`, `EnumProjects`' path and
+  `PROJECT_NAME` read back the new file, the dirty flag clears, nothing is
+  reloaded (bridge alive, undo history kept), and it works on a clean tab, a
+  dirty tab, a tab that already had another filename (a true rename), on
+  a **non-active** tab addressed by its `ReaProject` pointer, and onto a path
+  that **already exists** (overwritten silently, no prompt). `project.py save
+  --as --project` uses it by pointer, so the active tab is irrelevant. Options `0`, by contrast, writes a **copy**: an unnamed tab
+  keeps its empty name and path (a named one keeps its old name), stays dirty,
+  and closing it still prompts.
+* `GetSetProjectInfo_String(_, "PROJECT_NAME", x, true)` is a no-op. Reaper's
+  API text says read-only, and setting it read back empty.
+* To close a scratch tab silently: `Main_SaveProjectEx(0, "/private/tmp/x.rpp",
+  8)` (adopts the file and clears dirty, see below), then
   `Main_OnCommand(40860, 0)` (close current project tab). `40859` opens a new
-  tab. This is the safe test harness: new tab, work, reopen-noprompt, close.
+  tab. This is the safe test harness: new tab, work, save-as with `&8`, close.
+  `Main_openProject("noprompt:" .. path)` also clears the way, but it reloads
+  the project and kills the bridge.
 * `GetCursorPosition`, `GetPlayState` and `EnumProjectMarkers` are
   active-project-only. The `...Ex` / `...3` variants take a project.
 * `Main_openProject("noprompt:<path>")` on a path that does **not** exist
@@ -63,27 +75,31 @@ which also gives it free `O_EXCL` slot allocation.
   the file exists first; getting this wrong once cost a scratch tab and the
   bridge.
 * Once a tab has a filename, `Main_SaveProject(0, false)` does clear the dirty
-  flag (unlike `Main_SaveProjectEx` to a new path). That is the other way to
-  close a scratch tab without a prompt.
+  flag, as does `Main_SaveProjectEx` with `&8` (without `&8` it does not).
+  Either one leaves a scratch tab closable without a prompt.
 * On a tab with **no** filename, `Main_SaveProject` would open a Save As
-  dialog, so `project.py save` refuses and asks for `--as PATH` instead. The
-  full no-dialog recipe, verified end to end: `Main_SaveProjectEx(0, path, 0)`
-  writes the file, `Main_openProject("noprompt:" .. path)` then adopts it (the
-  path now exists, so the blank-the-tab trap above cannot fire), and from there
-  a plain save is silent and `Main_OnCommand(40860, 0)` closes without a
-  prompt.
-* **`40860` closes the ACTIVE tab, not "your" tab.** Nothing about the action
-  is scoped to the project your script opened; it acts on whatever
-  `EnumProjects(-1, "")` returns at that instant, and that changes under you
-  (the user clicks a tab, another agent opens one). Same for `40859`: the new
-  tab becomes active, so anything you do afterwards lands wherever the active
-  tab happens to be by then. The safe shape is one synchronous script that
-  records the active project, `SelectProjectInstance`s its own tab, verifies
-  `EnumProjects(-1, "")` by exact path, does the work, and hands the original
-  tab back -- Reaper runs it on the main thread, so nothing can interleave.
-  `Main_OnCommandEx(cmd, flag, proj)` takes a project pointer but most actions
-  ignore it; `InsertTrackInProject`, `CountTracks(proj)` and the track-pointer
-  APIs genuinely are project-explicit.
+  dialog, so `project.py save` refuses and asks for `--as PATH` instead, which
+  is the `&8` save above. The older recipe (`Main_SaveProjectEx(0, path, 0)`
+  then `Main_openProject("noprompt:" .. path)` to adopt it) also works but
+  reloads the project, which **kills the bridge** and drops the undo history;
+  keep it only for closing a scratch tab whose state you do not care about.
+* Working while the user is in another tab: `Main_SaveProjectEx`,
+  `Main_SaveProject`, `IsProjectDirty` and `MarkProjectDirty` all take a
+  `ReaProject` pointer from `EnumProjects(i)`, so a tab can be saved without
+  making it active (`project.py save --project` does this, and re-checks the
+  tab's path inside the Lua in case the tabs changed since it was resolved).
+  `InsertTrackAtIndex` and `Main_OnCommand` do **not** take a project: they
+  hit the active tab. A new tab from `40859` becomes active, but
+  `SelectProjectInstance(previous)` in the same script hands the UI straight
+  back, so a scratch tab can be created in the background. Closing is the exception (`40860` is
+  active-only): `SelectProjectInstance(scratch)`, `40860`,
+  `SelectProjectInstance(theirs)` in one script is a millisecond flicker.
+  Always check the active tab's path first and refuse if it is not what you
+  expected; a script that assumed the scratch tab was still active found the
+  user's project there instead.
+  `Main_OnCommandEx(cmd, flag, proj)` takes a project pointer but most
+  actions ignore it; `InsertTrackInProject`, `CountTracks(proj)` and the
+  track-pointer APIs genuinely are project-explicit.
 * `error(msg, 0)` raises without Lua's `body_xxx.lua:26:` prefix, so the
   message `LuaError` carries reads like a CLI error instead of a traceback.
   The new scripts use it; the older ones do not.
@@ -357,5 +373,11 @@ AirPods used as an input drop to a 24 kHz phone profile. Use a real mic.
   post-FX one; only the post-FX envelope has been exercised.
 * Tempo changes inside an automated range: every time is computed with
   `TimeMap2_QNToTime`, so it should follow the tempo map, but it is untested.
+* Whether `EnumProjects` echoes an uppercase `.RPP` or a non-ASCII path
+  byte-for-byte after a `&8` save. `project.py save --as` compares strings, so
+  a drift would show as a false "not adopted" (exit 1), never a false success.
+* What `Main_SaveProjectEx` does when the directory is unwritable (the GUI
+  shows an error box). `project.py` checks writability first so it never
+  finds out.
 * Time signatures other than 4/4: every bar<->quarter-note conversion in rondo
   assumes 4/4. `status.py` reports the real time signature so you can notice.

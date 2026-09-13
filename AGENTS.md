@@ -32,7 +32,12 @@ python scripts/render.py --from 1 --to 8 --out /private/tmp/take.wav   # listen
 0-based index, and an ambiguous name is an error rather than a guess.
 
 Every script takes `--json` where machine output helps, and `--help` always
-tells the truth. Scripts act on the **active project tab**.
+tells the truth. Scripts act on the **active project tab**, with one
+exception: `project.py save --as PATH --project TAB` names the tab (file name
+with or without `.rpp`, or the index from `project.py tabs`) and saves it by
+pointer, so "save the prototype file as take2" is `project.py tabs` to see
+what is open, then `project.py save --as ~/songs/take2.rpp --project
+prototype-1`, whatever tab the human is looking at.
 
 Unit tests: `python -m unittest discover -s scripts/tests`.
 
@@ -66,7 +71,8 @@ Regenerate this table with `python scripts/index.py --write`;
 actually behaves: the exact `TrackFX_AddByName` strings, the `.fxp` ->
 `.vstpreset` byte layout that makes Surge patches loadable, the RS5K parameter
 map, the synchronous render action, and the traps (`"AU: Surge XT"` loads the
-wrong plugin; `Main_SaveProjectEx` does not clear the dirty flag). Read it
+wrong plugin; `Main_SaveProjectEx` without option `&8` does not clear the dirty
+flag). Read it
 before writing any new ReaScript, and trust it over your own recollection.
 
 ### The grid note format
@@ -88,7 +94,8 @@ when you need to write, correct, or generate a melody.
   `reaper.ini` / the plugin caches and using the bridge mailbox directory.
 * **Never work in the user's open project when testing.** Open a new tab
   (`Main_OnCommand(40859, 0)`), do everything there, then
-  `Main_openProject("noprompt:<temp>.rpp")` and `Main_OnCommand(40860, 0)` to
+  `Main_SaveProjectEx(0, "/private/tmp/<temp>.rpp", 8)` (the tab adopts the
+  file and is clean; the bridge survives) and `Main_OnCommand(40860, 0)` to
   close it without a save prompt. Check `status.py`'s tab list before and
   after. If something goes wrong, stop and say so rather than improvising in
   the user's project.
