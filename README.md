@@ -3,14 +3,29 @@
 [![ci](https://github.com/aarontimko/rondo/actions/workflows/ci.yml/badge.svg)](https://github.com/aarontimko/rondo/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](#license)
 
-<!-- Enable when the GIF lands:
-![A chat asking for a night-time driving synth song on the left, Reaper adding the tracks on the right](docs/demo/rondo.gif)
--->
+![A chat asking for a night-time driving synth song on the left, Reaper filling in the tracks on the right, then the finished song playing](docs/demo/rondo.gif)
 
 A small stdlib toolkit that lets an LLM drive Reaper, so you can make music by
 talking. You describe a part in words, and one script per task writes the notes,
 loads the instrument, copies the section or renders the bars, into the project
 you already have open.
+
+That is the whole workflow. After the one-time setup below, the prompt can be as
+plain as "Hey Claude, give me a night-time driving synth song, moody and retro,
+lasting about 2 minutes, with an intro, some building and swelling, a bridge,
+a final closure and an outro." The clip above is a smaller model (Sonnet) working
+from exactly that; two or three minutes later there is a song with named
+sections, instruments and automation in your Reaper project, ready to play,
+edit and keep.
+
+The conversation carries on from there. "I don't like the bridge, give me five
+alternates" puts five variations on muted tracks so you can unmute each and
+compare; "keep number three and delete the rest" promotes the winner. "Make the
+pad swell into the chorus", "try a key change in the bridge", "save this as
+take two and try a faster tempo" are all the same loop: you say what you hear,
+the scripts change the project, and you listen again.
+[`docs/tutorial.md`](docs/tutorial.md) walks through one whole session that way.
+
 
 ## Who it is for
 
