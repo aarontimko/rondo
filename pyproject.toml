@@ -10,7 +10,7 @@ dependencies = []
 
 [project.optional-dependencies]
 # Only scripts/hum_to_grid.py needs these.
-transcribe = ["librosa>=0.11", "soundfile"]
+transcribe = ["librosa>=0.11.0", "soundfile"]
 
 [tool.setuptools]
 package-dir = { "" = "scripts" }
