@@ -70,11 +70,14 @@ local k = 0
 while true do
   local ok, isrgn, pos, rend, name, idx = reaper.EnumProjectMarkers3(P, k)
   if ok == 0 then break end
+  -- qn_to_bar, not math.floor: a region ending exactly on the bar 25 line
+  -- converts to 95.999999999 quarter notes, and flooring that reports the
+  -- region a whole bar short.
   local row = { name = name, index = idx, position = pos,
-                bar = math.floor(reaper.TimeMap2_timeToQN(P, pos) / 4) + 1 }
+                bar = qn_to_bar(reaper.TimeMap2_timeToQN(P, pos)) }
   if isrgn then
     row["end"] = rend
-    row.end_bar = math.floor(reaper.TimeMap2_timeToQN(P, rend) / 4) + 1
+    row.end_bar = qn_to_bar(reaper.TimeMap2_timeToQN(P, rend))
     regions[#regions+1] = row
   else
     markers[#markers+1] = row
@@ -100,7 +103,7 @@ log(jsonenc({
   project_tabs = tabs,
   bpm = bpm, timesig = { num, den },
   cursor = cursor,
-  cursor_bar = math.floor(reaper.TimeMap2_timeToQN(P, cursor) / 4) + 1,
+  cursor_bar = qn_to_bar(reaper.TimeMap2_timeToQN(P, cursor)),
   length_seconds = last,
   length_bars = math.floor(reaper.TimeMap2_timeToQN(P, last) / 4 + 0.5),
   tracks = tracks,

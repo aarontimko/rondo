@@ -1,18 +1,23 @@
-"""Argument parsing and Lua generation for track.py and project.py.
+"""Argument parsing and Lua generation for track.py, project.py, copy_section.py.
 
 Everything here stops short of ``run_lua``: it checks that the parsers accept
 what the docs promise, refuse what they should, and that the generated Lua is
 well formed (no leftover ``%(...)s``, the right API call, the right numbers).
 """
 
+import io
+import json
 import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 
+import copy_section  # noqa: E402
 import project  # noqa: E402
 import track  # noqa: E402
 from rondo import reaper  # noqa: E402
@@ -221,8 +226,10 @@ class TestProjectPathGuard(unittest.TestCase):
 class TestProjectLua(unittest.TestCase):
     def test_no_unsubstituted_placeholders(self):
         for src in (
-            project.SAVE_LUA % {"as": "nil"},
-            project.SAVE_LUA % {"as": '"/tmp/x.rpp"'},
+            project.SAVE_LUA % {"as": "nil", "index": -1, "expect": "nil",
+                                "options": project.SAVE_AS_OPTIONS},
+            project.SAVE_LUA % {"as": '"/tmp/x.rpp"', "index": 2, "expect": '""',
+                                "options": project.SAVE_AS_OPTIONS},
             project.CURSOR_LUA % {"qn": 32.0},
             project.METRONOME_LUA % {"want": "true"},
             project.MARK_LUA % {"name": '"B"', "t0": 32.0, "t1": 64.0,
@@ -243,10 +250,238 @@ class TestProjectLua(unittest.TestCase):
 
     def test_save_picks_the_right_call_for_each_case(self):
         self.assertIn("Main_SaveProjectEx", project.SAVE_LUA)
-        self.assertIn("Main_SaveProject(0, false)", project.SAVE_LUA)
+        self.assertIn("Main_SaveProject(proj, false)", project.SAVE_LUA)
+
+    def test_save_as_uses_the_adopt_filename_option(self):
+        # Main_SaveProjectEx option &8 = "set as the new project filename for
+        # this ReaProject" (verified on Reaper 7.79). Without it Reaper writes a
+        # copy and the tab stays "(unsaved)" and dirty.
+        self.assertEqual(project.SAVE_AS_OPTIONS & 8, 8)
+        src = project.SAVE_LUA % {"as": '"/tmp/x.rpp"', "index": 2, "expect": '""',
+                                  "options": project.SAVE_AS_OPTIONS}
+        self.assertIn("reaper.Main_SaveProjectEx(proj, AS, 8)", src)
+        # Nothing reloads the project: that would stop the bridge's defer loop.
+        self.assertNotIn("Main_openProject", src)
+
+    def test_save_addresses_the_tab_by_pointer_not_by_active(self):
+        src = project.SAVE_LUA % {"as": '"/tmp/x.rpp"', "index": 2, "expect": '""',
+                                  "options": project.SAVE_AS_OPTIONS}
+        self.assertIn("reaper.EnumProjects(INDEX, \"\")", src)
+        self.assertIn("reaper.Main_SaveProject(proj, false)", src)
+        self.assertIn("reaper.IsProjectDirty(proj)", src)
+        # No call passes 0 ("the active tab") as the project.
+        self.assertNotRegex(src, r"SaveProject(Ex)?\(0,")
+        self.assertNotIn("IsProjectDirty(0)", src)
+
+
+
+TABS = [
+    {"index": 0, "name": "prototype-1.RPP", "path": "/m/prototype-1.RPP",
+     "active": False, "dirty": False, "tracks": 9},
+    {"index": 1, "name": "sunset.RPP", "path": "/m/sunset.RPP",
+     "active": True, "dirty": True, "tracks": 5},
+    {"index": 2, "name": "", "path": "", "active": False, "dirty": False, "tracks": 0},
+]
+
+
+class TestResolveTab(unittest.TestCase):
+    def test_names_drop_the_extension_and_label_unsaved_tabs(self):
+        self.assertEqual(project.tab_names(TABS), ["prototype-1", "sunset", "(unsaved)"])
+
+    def test_exact_with_or_without_extension_any_case(self):
+        for spec in ("prototype-1", "PROTOTYPE-1.rpp", "prototype-1.RPP", " prototype-1 "):
+            self.assertEqual(project.resolve_tab(spec, TABS), 0, spec)
+
+    def test_prefix(self):
+        self.assertEqual(project.resolve_tab("suns", TABS), 1)
+
+    def test_index(self):
+        self.assertEqual(project.resolve_tab("2", TABS), 2)
+
+    def test_unsaved_tab_by_label(self):
+        self.assertEqual(project.resolve_tab("(unsaved)", TABS), 2)
+
+    def test_two_unsaved_tabs_need_the_index(self):
+        tabs = TABS + [dict(TABS[2], index=3)]
+        with self.assertRaises(SystemExit) as c:
+            project.resolve_tab("(unsaved)", tabs)
+        self.assertIn("--project", str(c.exception))
+        self.assertEqual(project.resolve_tab("3", tabs), 3)
+
+    def test_unknown_and_ambiguous_are_errors_that_list_the_tabs(self):
+        with self.assertRaises(SystemExit) as c:
+            project.resolve_tab("mixdown", TABS)
+        self.assertIn("sunset", str(c.exception))
+        tabs = TABS + [{"index": 3, "name": "sunset-v2.RPP", "path": "/m/n2.RPP",
+                        "active": False, "dirty": False, "tracks": 1}]
+        with self.assertRaises(SystemExit):
+            project.resolve_tab("suns", tabs)
+
+
+def save_result(**over):
+    """What SAVE_LUA logs on a clean save-as of an unnamed tab, with overrides."""
+    r = {"method": "Main_SaveProjectEx", "target": "/p/b.rpp", "tab": 2, "active": False,
+         "path_before": "", "path_after": "/p/b.rpp", "written": True, "adopted": True,
+         "dirty": False}
+    r.update(over)
+    r["ok"] = r["adopted"] and not r["dirty"]
+    return r
+
+
+class TestSaveText(unittest.TestCase):
+    def test_in_place(self):
+        r = save_result(method="Main_SaveProject", target="/p/a.rpp",
+                        path_before="/p/a.rpp", path_after="/p/a.rpp")
+        self.assertEqual(project.render_save(r), "saved in place: /p/a.rpp (tab 2)")
+
+    def test_in_place_that_stayed_dirty_is_not_called_a_success(self):
+        r = save_result(method="Main_SaveProject", target="/p/a.rpp",
+                        path_before="/p/a.rpp", path_after="/p/a.rpp", dirty=True)
+        self.assertIn("did not stick", project.render_save(r))
+
+    def test_save_as_adopted(self):
+        text = project.render_save(save_result())
+        self.assertIn("saved as /p/b.rpp", text)
+        self.assertIn("now has that name", text)
+        self.assertNotIn("it was", text)
+
+    def test_save_as_on_a_named_tab_reports_the_rename(self):
+        text = project.render_save(save_result(path_before="/p/a.rpp"))
+        self.assertIn("(it was /p/a.rpp)", text)
+
+    def test_save_as_not_adopted_says_so(self):
+        text = project.render_save(save_result(path_after="", adopted=False, dirty=True))
+        self.assertIn("wrote /p/b.rpp", text)
+        self.assertIn("tab 2 is (unsaved)", text)
+        self.assertIn("has unsaved changes", text)
+
+    def test_never_claims_a_write_that_did_not_happen(self):
+        text = project.render_save(save_result(written=False, path_after="",
+                                               adopted=False, dirty=True))
+        self.assertIn("did NOT write /p/b.rpp", text)
+
+
+class TestSaveMain(unittest.TestCase):
+    """main()'s exit code and streams, with Reaper mocked out."""
+
+    AS = str(Path(tempfile.gettempdir()) / "rondo-test-save.rpp")
+
+    def run_save(self, result, *argv):
+        """Reaper mocked: the first Lua call answers the tab list, the second the save."""
+        with mock.patch.object(project.reaper, "run_lua_json",
+                               side_effect=[TABS, result]) as run, \
+             mock.patch.object(project._cli, "require_reaper", return_value="7.79"), \
+             mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            rc = project.main(["save", *argv])
+        return rc, out.getvalue(), run
+
+    def test_success_exits_zero_and_prints(self):
+        rc, out, _ = self.run_save(save_result(), "--as", self.AS, "--project", "2")
+        self.assertEqual(rc, 0)
+        self.assertIn("saved as", out)
+
+    def test_as_without_project_is_refused_before_reaper(self):
+        with mock.patch.object(project.reaper, "run_lua_json") as run, \
+             self.assertRaises(SystemExit) as c:
+            project.main(["save", "--as", self.AS])
+        self.assertIn("--project", str(c.exception))
+        run.assert_not_called()
+
+    def test_the_tab_is_resolved_first_and_pinned_in_the_lua(self):
+        _, _, run = self.run_save(save_result(), "--as", self.AS,
+                                  "--project", "prototype-1")
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_args_list[0].args[0], project.TABS_LUA)
+        src = run.call_args_list[1].args[0]
+        self.assertIn('local AS, INDEX, EXPECT = "%s", 0, "/m/prototype-1.RPP"'
+                      % Path(self.AS).resolve(), src)
+        self.assertIn("Main_SaveProjectEx(proj, AS, 8)", src)
+
+    def test_the_active_tab_is_not_the_default_for_save_as(self):
+        # sunset is the active tab in TABS; naming prototype-1 must pin index 0.
+        _, _, run = self.run_save(save_result(), "--as", self.AS, "--project", "proto")
+        self.assertIn(", 0, ", run.call_args_list[1].args[0].splitlines()[1])
+
+    def test_plain_save_defaults_to_the_active_tab(self):
+        r = save_result(method="Main_SaveProject", target="/m/sunset.RPP", tab=1,
+                        active=True, path_before="/m/sunset.RPP",
+                        path_after="/m/sunset.RPP")
+        with mock.patch.object(project.reaper, "run_lua_json", return_value=r) as run, \
+             mock.patch.object(project._cli, "require_reaper", return_value="7.79"), \
+             mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            rc = project.main(["save"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(run.call_count, 1)
+        self.assertIn("local AS, INDEX, EXPECT = nil, -1, nil", run.call_args.args[0])
+        self.assertIn("saved in place", out.getvalue())
+
+    def test_unknown_project_is_an_error_naming_the_tabs(self):
+        with self.assertRaises(SystemExit) as c:
+            self.run_save(save_result(), "--as", self.AS, "--project", "mixdown")
+        self.assertIn("prototype-1", str(c.exception))
+
+    def test_failure_is_a_refusal_on_stderr(self):
+        with self.assertRaises(SystemExit) as c:
+            self.run_save(save_result(adopted=False, path_after="", dirty=True),
+                          "--as", self.AS, "--project", "2")
+        self.assertIn("tab 2 is (unsaved)", str(c.exception))
+
+    def test_json_keeps_the_payload_on_stdout_but_exits_nonzero(self):
+        rc, out, _ = self.run_save(save_result(adopted=False, path_after="", dirty=True),
+                                   "--as", self.AS, "--project", "2", "--json")
+        self.assertEqual(rc, 1)
+        self.assertFalse(json.loads(out)["ok"])
+
+    def test_unwritable_directory_is_refused_before_reaper(self):
+        with mock.patch("os.access", return_value=False), \
+             mock.patch.object(project.reaper, "run_lua_json") as run, \
+             self.assertRaises(SystemExit) as c:
+            project.main(["save", "--as", self.AS, "--project", "2"])
+        self.assertIn("not writable", str(c.exception))
+        run.assert_not_called()
 
     def test_marker_deletes_by_display_index(self):
-        self.assertIn("DeleteProjectMarker(0, idx, isrgn)", project.MARK_LUA)
+        # the walk lives in the Lua prelude now, so copy_section.py --region
+        # replaces a same-named region exactly the way project.py region does.
+        self.assertIn("add_marker_replacing(NAME, t0, t1, IS_REGION)", project.MARK_LUA)
+        self.assertIn("DeleteProjectMarker(0, idx, isrgn)", reaper.LUA_PRELUDE)
+        self.assertIn("AddProjectMarker2(0, is_region, t0, t1, name, -1, 0)",
+                      reaper.LUA_PRELUDE)
+
+
+class TestCopySectionRegion(unittest.TestCase):
+    def src(self, start=1, stop=8, at=17, region='"A3"'):
+        span = stop - start + 1
+        t0, t1 = reaper.bar_span_qn(start, stop)
+        return copy_section.LUA % {
+            "from": t0, "to": t1, "at": reaper.bars_to_qn(at),
+            "region_end": reaper.bars_to_qn(at + span),
+            "tracks": "nil", "region": region,
+        }
+
+    def test_no_unsubstituted_placeholders(self):
+        for src in (self.src(), self.src(region="nil")):
+            self.assertNotRegex(src, r"%\(\w+\)")
+            self.assertIn("log(jsonenc(", src)
+
+    def test_the_region_is_measured_in_bars_not_by_adding_a_duration(self):
+        src = self.src(start=1, stop=8, at=17)
+        self.assertIn("local FROM_QN, TO_QN, AT_QN = 0.0, 32.0, 64.0", src)
+        self.assertIn("local REGION_END_QN = 96.0", src)     # bars 17-24
+        self.assertIn("TimeMap2_QNToTime(0, REGION_END_QN)", src)
+
+    def test_it_replaces_a_same_named_region_like_project_py_does(self):
+        self.assertIn("add_marker_replacing(REGION, ta, rend, true)", self.src())
+        self.assertNotIn("AddProjectMarker2", copy_section.LUA)
+
+    def test_a_backwards_range_is_refused_before_reaper_is_touched(self):
+        with self.assertRaises(SystemExit):
+            copy_section.main(["--from", "8", "--to", "1", "--at", "17"])
+
+    def test_copying_onto_itself_is_refused(self):
+        with self.assertRaises(SystemExit) as c:
+            copy_section.main(["--from", "1", "--to", "8", "--at", "4"])
+        self.assertIn("inside the source range", str(c.exception))
 
 
 if __name__ == "__main__":

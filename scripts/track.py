@@ -183,9 +183,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         description=__doc__.strip().splitlines()[1],
         epilog="--track takes a name or a 0-based index. Names match "
-               "case-insensitively: exact first, then prefix. An index only wins "
-               "when no track has that name, and an ambiguous name is an error, "
-               "never a guess. Bars are 1-based and --from/--to are inclusive.",
+               "case-insensitively: exact name first, then the track's role "
+               "(its name without the trailing ' (...)' suffix), then the "
+               "index, then a prefix. An ambiguous spec is an error, never a "
+               "guess. Bars are 1-based and --from/--to are inclusive.",
     )
     sub = ap.add_subparsers(dest="command", required=True, metavar="COMMAND")
 

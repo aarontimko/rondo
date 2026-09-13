@@ -15,26 +15,39 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rondo import _cli, reaper  # noqa: E402
+from rondo import _cli, reaper, tracks  # noqa: E402
 
 DEFAULT_MANIFEST = _cli.REPO / "samples" / "kit.json"
+
+#: The instrument label for the track's display suffix, so the Reaper track
+#: list reads "Drums (RS5K kit: VCSL one-shots)" and says where the sound comes
+#: from. ``--keep-name`` skips the rename.
+KIT_LABEL = "RS5K kit"
 
 # One RS5K instance per drum sound: an instance holds ONE file list, so a GM
 # kit is N instances on ONE track, each narrowed to a single note.
 #   param 3  = note range start   (value = note / 127)
 #   param 4  = note range end
 #   param 11 = obey note-offs     (0 = one-shot, let the sample ring out)
+# TI is the track index rondo/tracks.py resolved --track to, or nil for "not
+# there, create it". NEW_NAME = nil means --keep-name.
 LUA = r"""
-local NAME, KIT, REPLACE = %(name)s, %(kit)s, %(replace)s
+local TI, NAME, NEW_NAME = %(index)s, %(name)s, %(new_name)s
+local KIT, REPLACE = %(kit)s, %(replace)s
 
 reaper.Undo_BeginBlock()
-local tr, ti = find_track(NAME)
-local created = false
-if not tr then
+local tr, ti, created = nil, TI, false
+if TI then
+  tr = reaper.GetTrack(0, TI)
+  if not tr then error("no track at index " .. TI, 0) end
+else
   local at = reaper.CountTracks(0)
   reaper.InsertTrackAtIndex(at, true)
   tr = reaper.GetTrack(0, at); ti = at; created = true
-  reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", NAME, true)
+  reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", NEW_NAME or NAME, true)
+end
+if NEW_NAME and track_name(tr) ~= NEW_NAME then
+  reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", NEW_NAME, true)
 end
 
 if REPLACE then
@@ -68,8 +81,20 @@ end
 reaper.Undo_EndBlock("rondo: build drum kit on " .. NAME, -1)
 reaper.TrackList_AdjustWindows(false)
 
-log(jsonenc({ track = NAME, track_index = ti, created = created, pads = rows }))
+log(jsonenc({ track = track_name(tr), track_index = ti,
+              created = created, pads = rows }))
 """
+
+
+def manifest_name(path: Path) -> str:
+    """The kit's short name, for the track's display suffix.
+
+    ``samples/kit.json`` carries a ``name``; a hand-written manifest that has
+    none falls back to its own file name, which is at least something the human
+    chose.
+    """
+    data = json.loads(path.read_text())
+    return str(data.get("name") or path.stem).strip() or path.stem
 
 
 def load_manifest(path: Path) -> list[tuple[int, str]]:
@@ -92,6 +117,8 @@ def main(argv=None) -> int:
     ap.add_argument("--manifest", default=str(DEFAULT_MANIFEST))
     ap.add_argument("--replace", action="store_true",
                     help="remove existing RS5K instances from the track first")
+    ap.add_argument("--keep-name", action="store_true",
+                    help="do not rename the track to \"Role (RS5K kit: <kit>)\"")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
 
@@ -108,8 +135,15 @@ def main(argv=None) -> int:
         )
 
     _cli.require_reaper()
+    rows = tracks.snapshot()
+    ti = tracks.find_or_none(a.track, rows)
+    role = tracks.split_role(rows[ti]["name"] if ti is not None else a.track)[0]
+    new_name = (None if a.keep_name
+                else tracks.display_name(role, KIT_LABEL, manifest_name(manifest)))
     r = reaper.run_lua_json(LUA % {
-        "name": reaper.lua_str(a.track),
+        "index": "nil" if ti is None else str(ti),
+        "name": reaper.lua_str(role or a.track),
+        "new_name": reaper.lua_str(new_name) if new_name else "nil",
         "kit": reaper.lua_value([[n, f] for n, f in kit]),
         "replace": "true" if a.replace else "false",
     }, timeout=60.0)

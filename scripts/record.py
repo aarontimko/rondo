@@ -23,8 +23,12 @@ from rondo import _cli, reaper, tracks  # noqa: E402
 # there is no action for it, so a human sets that by hand.
 SOURCES = {k: v for k, v in tracks.REC_INPUTS.items() if v >= 0}
 
+# TI is the index rondo/tracks.py resolved --track to, or nil for "not there,
+# create it under NAME". Prefix matching is off for the same reason as
+# add_instrument: a miss here creates a track.
 LUA = r"""
-local NAME, SOURCE, MONITOR, ARM = %(name)s, %(source)s, %(monitor)s, %(arm)s
+local TI, NAME = %(index)s, %(name)s
+local SOURCE, MONITOR, ARM = %(source)s, %(monitor)s, %(arm)s
 local METRONOME, DISARM_ALL = %(metronome)s, %(disarm_all)s
 
 reaper.Undo_BeginBlock()
@@ -40,9 +44,11 @@ end
 
 local row = nil
 if NAME then
-  local tr, ti = find_track(NAME)
-  local created = false
-  if not tr then
+  local tr, ti, created = nil, TI, false
+  if TI then
+    tr = reaper.GetTrack(0, TI)
+    if not tr then error("no track at index " .. TI, 0) end
+  else
     local at = reaper.CountTracks(0)
     reaper.InsertTrackAtIndex(at, true)
     tr = reaper.GetTrack(0, at); ti = at; created = true
@@ -51,7 +57,7 @@ if NAME then
   if SOURCE then reaper.SetMediaTrackInfo_Value(tr, "I_RECINPUT", SOURCE) end
   if MONITOR then reaper.SetMediaTrackInfo_Value(tr, "I_RECMON", MONITOR) end
   if ARM ~= nil then reaper.SetMediaTrackInfo_Value(tr, "I_RECARM", ARM and 1 or 0) end
-  row = { track = NAME, index = ti, created = created,
+  row = { track = track_name(tr), index = ti, created = created,
           rec_input = reaper.GetMediaTrackInfo_Value(tr, "I_RECINPUT"),
           monitor = reaper.GetMediaTrackInfo_Value(tr, "I_RECMON"),
           armed = reaper.GetMediaTrackInfo_Value(tr, "I_RECARM") == 1 }
@@ -91,8 +97,12 @@ def main(argv=None) -> int:
 
     mon = {"off": 0, "on": 1, "auto": 2}.get(a.monitor)
     _cli.require_reaper()
+    ti = None
+    if a.track:
+        ti = tracks.find_or_none(a.track, tracks.snapshot())
     r = reaper.run_lua_json(LUA % {
-        "name": reaper.lua_str(a.track) if a.track else "nil",
+        "index": "nil" if ti is None else str(ti),
+        "name": reaper.lua_str(a.track.strip()) if a.track else "nil",
         "source": SOURCES[a.source] if a.source else "nil",
         "monitor": mon if mon is not None else "nil",
         "arm": ("true" if a.arm == "on" else "false") if a.track else "nil",

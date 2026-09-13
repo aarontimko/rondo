@@ -6,6 +6,7 @@
     "and puts one ReaSamplOmatic5000 per note on a single track.",
     "Source: sgossner/VCSL, CC0 1.0 (public domain), commit c1ea7bcc."
   ],
+  "name": "VCSL one-shots",
   "source": {
     "repo": "https://github.com/sgossner/VCSL",
     "commit": "c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e",

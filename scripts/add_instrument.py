@@ -14,7 +14,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rondo import _cli, reaper, surge_preset  # noqa: E402
+from rondo import _cli, reaper, surge_preset, tracks  # noqa: E402
 
 # Exact TrackFX_AddByName strings. Verified on Reaper 7.79 / macOS-arm64.
 # HAZARD: "AU: Surge XT" fuzzy-matches the Surge XT *Effects* plugin -- never
@@ -25,18 +25,32 @@ INSTRUMENTS = {
     "piano": "AU: DLSMusicDevice (Apple)",
 }
 
+#: The short label that goes in the track's display suffix: a track called
+#: ``Pad`` becomes ``Pad (Surge: Bell Pad)``, so the Reaper track list says what
+#: is making each sound. Short on purpose -- the plugin's full name is already
+#: in the FX chain, and the track panel is narrow. ``--keep-name`` skips it,
+#: and ``track.py rename --to`` is final: rondo never edits a name a human set,
+#: only the ``(...)`` suffix it put there itself.
+LABELS = {"surge": "Surge", "dexed": "Dexed", "piano": "GM Piano"}
+
+# --track is resolved to an INDEX in Python (rondo/tracks.py, prefix matching
+# off because a miss here CREATES the track); TI = nil means "not there, make
+# it". NEW_NAME = nil means --keep-name.
 LUA = r"""
-local NAME, FX_NAME, INDEX = %(name)s, %(fx)s, %(index)s
+local TI, NAME, NEW_NAME = %(index)s, %(name)s, %(new_name)s
+local FX_NAME, INDEX = %(fx)s, %(at)s
 local SHORT, VENDOR = %(short)s, %(vendor)s
-local tr, ti = find_track(NAME)
-local created = false
-if not tr then
+local tr, ti, created = nil, TI, false
+if TI then
+  tr = reaper.GetTrack(0, TI)
+  if not tr then error("no track at index " .. TI, 0) end
+else
   local at = INDEX
   if at == nil then at = reaper.CountTracks(0) end
   reaper.InsertTrackAtIndex(at, true)
   tr = reaper.GetTrack(0, at)
   ti = at
-  reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", NAME, true)
+  reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", NEW_NAME or NAME, true)
   created = true
 end
 
@@ -53,6 +67,15 @@ if fx < 0 then error("TrackFX_AddByName failed for " .. FX_NAME) end
 
 local result = { track = ti, fx = fx, created = created }
 %(patch)s
+
+-- Rename LAST, so a patch that refuses to load leaves the old name standing.
+result.renamed = false
+if NEW_NAME and track_name(tr) ~= NEW_NAME then
+  reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", NEW_NAME, true)
+  result.renamed = true
+end
+result.name = track_name(tr)
+reaper.TrackList_AdjustWindows(false)
 
 local _, loaded = reaper.TrackFX_GetFXName(tr, fx, "")
 result.fx_name = loaded
@@ -106,35 +129,53 @@ end
 """
 
 
+def patch_lua(instrument: str, patch: str | None) -> tuple[str, str | None]:
+    """``--patch`` -> (the Lua that loads it, the label for the display suffix).
+
+    The label is what the track name will say, so it names the patch that was
+    actually found: Surge resolves a substring to one ``.fxp``, and the file's
+    own name is more honest than whatever fragment was typed.
+    """
+    if not patch:
+        return "", None
+    if instrument == "surge":
+        fxp = surge_preset.resolve_patch(patch)
+        out = reaper.SCRATCH / "presets" / (fxp.stem + ".vstpreset")
+        surge_preset.build_vstpreset(fxp, out)
+        return SURGE_PATCH % {"preset": reaper.lua_str(str(out))}, fxp.stem
+    if instrument == "dexed":
+        if patch.strip().lstrip("-").isdigit():
+            return DEXED_INDEX % {"idx": int(patch)}, f"program {int(patch)}"
+        return DEXED_NAME % {"want": reaper.lua_str(patch)}, patch.strip()
+    raise SystemExit(
+        f"--patch is not supported for --instrument {instrument} "
+        "(the Apple GM piano exposes no presets)"
+    )
+
+
 def add_instrument(track: str, instrument: str, patch: str | None = None,
-                   index: int | None = None) -> dict:
+                   index: int | None = None, rename: bool = True) -> dict:
     fx_name = INSTRUMENTS[instrument]
-    patch_lua = ""
-    if patch:
-        if instrument == "surge":
-            fxp = surge_preset.resolve_patch(patch)
-            out = reaper.SCRATCH / "presets" / (fxp.stem + ".vstpreset")
-            surge_preset.build_vstpreset(fxp, out)
-            patch_lua = SURGE_PATCH % {"preset": reaper.lua_str(str(out))}
-        elif instrument == "dexed":
-            if patch.strip().lstrip("-").isdigit():
-                patch_lua = DEXED_INDEX % {"idx": int(patch)}
-            else:
-                patch_lua = DEXED_NAME % {"want": reaper.lua_str(patch)}
-        else:
-            raise SystemExit(
-                f"--patch is not supported for --instrument {instrument} "
-                "(the Apple GM piano exposes no presets)"
-            )
+    load, label = patch_lua(instrument, patch)
+
+    # Resolve here, not in Lua: exact name, then role, then index, and NO
+    # prefix match -- otherwise "--track Lead" would load onto an existing
+    # "Lead Harmony" instead of creating "Lead".
+    rows = tracks.snapshot()
+    ti = tracks.find_or_none(track, rows)
+    role = tracks.split_role(rows[ti]["name"] if ti is not None else track)[0]
+    new_name = tracks.display_name(role, LABELS[instrument], label) if rename else None
 
     short, _, vendor = fx_name.partition(":")[2].strip().partition(" (")
     src = LUA % {
-        "name": reaper.lua_str(track),
+        "index": "nil" if ti is None else str(ti),
+        "name": reaper.lua_str(role or track),
+        "new_name": reaper.lua_str(new_name) if new_name else "nil",
         "fx": reaper.lua_str(fx_name),
         "short": reaper.lua_str(short),
         "vendor": reaper.lua_str(vendor.rstrip(")")),
-        "index": "nil" if index is None else str(index),
-        "patch": patch_lua,
+        "at": "nil" if index is None else str(index),
+        "patch": load,
     }
     return reaper.run_lua_json(src, timeout=45.0)
 
@@ -145,6 +186,8 @@ def main(argv=None) -> int:
     ap.add_argument("--instrument", required=True, choices=sorted(INSTRUMENTS))
     ap.add_argument("--patch", help="Surge: patch name substring. Dexed: program name or index.")
     ap.add_argument("--index", type=int, help="insert position for a new track")
+    ap.add_argument("--keep-name", action="store_true",
+                    help="do not rename the track to \"Role (Instrument: Patch)\"")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--list-patches", action="store_true",
                     help="just list matching Surge patches and exit")
@@ -159,12 +202,13 @@ def main(argv=None) -> int:
         return 0
 
     _cli.require_reaper()
-    r = add_instrument(a.track, a.instrument, a.patch, a.index)
+    r = add_instrument(a.track, a.instrument, a.patch, a.index,
+                       rename=not a.keep_name)
     if a.json:
         print(json.dumps(r, indent=2))
     else:
         verb = "created" if r["created"] else "reused"
-        print(f"{verb} track {r['track']} \"{a.track}\": fx {r['fx']} = {r['fx_name']}")
+        print(f"{verb} track {r['track']} \"{r['name']}\": fx {r['fx']} = {r['fx_name']}")
         if a.patch:
             print(f"  patch: {r.get('patch_file') or r.get('patch_index')} "
                   f"-> preset {r['preset']!r} (index {r['preset_index']})")

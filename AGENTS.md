@@ -28,11 +28,33 @@ python scripts/render.py --from 1 --to 8 --out /private/tmp/take.wav   # listen
 
 `track.py` and `project.py` are the small moves in between: `track.py show
 --track Pad`, `track.py mute --track 3`, `project.py region --name A --from 1
---to 8`. `--track` takes a name (case-insensitive, exact then prefix) or a
-0-based index, and an ambiguous name is an error rather than a guess.
+--to 8`. **Every** `--track` / `--tracks` flag resolves the same way, in
+Python, before any Lua runs: case-insensitive **exact name**, then exact
+**role** (the name with its trailing ` (...)` suffix removed, so `--track Pad`
+finds `Pad (Surge: MKS-70 Warm Pad)`), then **0-based index**, then **prefix**.
+An ambiguous spec is an error listing the candidates, never a guess. The
+scripts that *create* the track when they cannot find it --
+`add_instrument.py`, `build_kit.py`, `record.py` -- stop before the prefix
+step, so `--track Lead` creates `Lead` instead of landing on `Lead Harmony`.
+The rule is `rondo.tracks.resolve`, documented in that module; `--project` and
+`automate.py`'s `--fx` / `--param` are the same function with different knobs.
+
+Track names teach the instrument. `add_instrument.py` renames the track it
+loads onto to `Role (Instrument: Patch)` -- `Pad (Surge: MKS-70 Warm Pad)`,
+`Bass (Dexed: E BASS 1)`, `Keys (GM Piano)` -- and `build_kit.py` names its
+track `Drums (RS5K kit: <kit>)`, so Reaper's track list says what is making
+each sound. Loading a new patch replaces the suffix rather than stacking
+another one on; the role in front of it is never touched. Pass `--keep-name` to
+skip the rename, and use `track.py rename --to` when you want a name rondo will
+not touch -- a human rename is final.
 
 Every script takes `--json` where machine output helps, and `--help` always
-tells the truth. Scripts act on the **active project tab**.
+tells the truth. Scripts act on the **active project tab**, with one
+exception: `project.py save --as PATH --project TAB` names the tab (file name
+with or without `.rpp`, or the index from `project.py tabs`) and saves it by
+pointer, so "save the prototype file as take2" is `project.py tabs` to see
+what is open, then `project.py save --as ~/songs/take2.rpp --project
+prototype-1`, whatever tab the human is looking at.
 
 Unit tests: `python -m unittest discover -s scripts/tests`.
 
@@ -42,6 +64,7 @@ Unit tests: `python -m unittest discover -s scripts/tests`.
 | task | what it does | needs |
 | --- | --- | --- |
 | `scripts/add_instrument.py` | Find or create a track and load Surge XT, Dexed or the Apple GM piano on it, optionally with a patch. | reaper-running |
+| `scripts/automate.py` | Draw a volume or FX-parameter automation envelope over a bar range, read the envelopes back, or clear them. | reaper-running |
 | `scripts/build_kit.py` | Build a ReaSamplOmatic5000 drum kit on one track from a note-to-wav manifest. | reaper-running, samples |
 | `scripts/copy_section.py` | Copy bars X..Y to bar Z on every track (or named tracks) and optionally name the result as a region. | reaper-running |
 | `scripts/hum_to_grid.py` | Transcribe a hummed or sung wav into rondo grid text you can feed to write-notes. | librosa |
@@ -65,7 +88,8 @@ Regenerate this table with `python scripts/index.py --write`;
 actually behaves: the exact `TrackFX_AddByName` strings, the `.fxp` ->
 `.vstpreset` byte layout that makes Surge patches loadable, the RS5K parameter
 map, the synchronous render action, and the traps (`"AU: Surge XT"` loads the
-wrong plugin; `Main_SaveProjectEx` does not clear the dirty flag). Read it
+wrong plugin; `Main_SaveProjectEx` without option `&8` does not clear the dirty
+flag). Read it
 before writing any new ReaScript, and trust it over your own recollection.
 
 ### The grid note format
@@ -87,10 +111,24 @@ when you need to write, correct, or generate a melody.
   `reaper.ini` / the plugin caches and using the bridge mailbox directory.
 * **Never work in the user's open project when testing.** Open a new tab
   (`Main_OnCommand(40859, 0)`), do everything there, then
-  `Main_openProject("noprompt:<temp>.rpp")` and `Main_OnCommand(40860, 0)` to
+  `Main_SaveProjectEx(0, "/private/tmp/<temp>.rpp", 8)` (the tab adopts the
+  file and is clean; the bridge survives) and `Main_OnCommand(40860, 0)` to
   close it without a save prompt. Check `status.py`'s tab list before and
   after. If something goes wrong, stop and say so rather than improvising in
   the user's project.
+* **Never close a tab without checking which one is active.** `40860` closes
+  whatever tab is ACTIVE at that instant, not the tab your script opened, and
+  the active tab changes under you -- the user clicks, another agent opens a
+  tab. So: record the active project with `EnumProjects(-1, "")` before you
+  open your scratch tab; give the scratch tab a filename of its own
+  (`Main_SaveProjectEx` then `Main_openProject("noprompt:...")`) so you can
+  recognise it by exact path; before closing, `SelectProjectInstance(<your
+  scratch project>)` and verify with `EnumProjects(-1, "")` that the active
+  tab's path really is your scratch file -- if it is not, do NOT close, stop
+  and report; after closing, `SelectProjectInstance(<the project that was
+  active>)` and verify by name. Same rule for writing: select your tab,
+  write, and hand the user's tab back inside ONE script, so no tab switch can
+  land between the select and the write.
 * **No dialogs.** Renders stay on action `42230` with `RENDER_ADDTOPROJ 0`.
 * **rondo never moves the transport.** It sets a track up; the human presses
   record and play.
