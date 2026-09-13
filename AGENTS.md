@@ -151,3 +151,8 @@ CI runs (`python -m unittest discover -s scripts/tests`, `python
 scripts/index.py --check`, `ruff check scripts`), the commit convention, and
 the pull-request rules. Read it before opening a PR or changing the workflows;
 it is also where the "no hooks, CI is the check" decision is written down.
+
+### Cutting a release
+
+`docs/dev/operations.md` is the maintainer runbook: what ships, how a release is
+cut, the jobs that run on their own and what to do when one is red.

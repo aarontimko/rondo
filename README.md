@@ -1,6 +1,7 @@
 # rondo
 
 [![ci](https://github.com/aarontimko/rondo/actions/workflows/ci.yml/badge.svg)](https://github.com/aarontimko/rondo/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/aarontimko/rondo)](https://github.com/aarontimko/rondo/releases/latest)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](#license)
 
 ![A chat asking for a night-time driving synth song on the left, Reaper filling in the tracks on the right, then the finished song playing](docs/demo/rondo.gif)
@@ -145,10 +146,10 @@ project tabs.
 
 ## Status
 
-Pre-release: build from source. Expect the script flags, the grid format and the
-track naming convention to move between minor versions until 1.0, with
-everything that moves written down in `CHANGELOG.md`, and `git pull` to carry a
-clone forward.
+`v0.1.0` is the first release: the scripts as a tagged source tree, on the
+Releases page. Expect the script flags, the grid format and the track naming
+convention to move between minor versions until 1.0, with everything that moves
+written down in `CHANGELOG.md`, and `git pull` to carry a clone forward.
 
 Bug reports and small fixes are welcome. A feature wants an issue before a pull
 request, so the shape can be agreed before anyone writes it.
