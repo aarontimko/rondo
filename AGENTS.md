@@ -1,7 +1,7 @@
 # rondo
 
 A small toolkit that lets an LLM drive the Reaper DAW. One script per task,
-stdlib only, no server to run. You talk; rondo writes notes, loads
+stdlib only, no server of its own. You talk; rondo writes notes, loads
 instruments, copies sections and renders a wav you can listen to.
 
 ## Golden path
@@ -103,13 +103,13 @@ when you need to write, correct, or generate a melody.
 
 * **Never commit audio.** No `.wav`, `.aif`, `.mp3`, no renders, no samples.
   `.gitignore` covers them; do not add exceptions. Renders go to
-  `/private/tmp` or `render/` and nowhere else in the repo.
+  `/private/tmp`, or to `render/` (gitignored) and nowhere else in the repo.
 * **Never `git add -A` or `git add .`.** Stage explicit paths.
 * **Samples arrive only through `samples/kit.json`** and
   `scripts/install_samples.py` (CC0 sources, pinned commit, size + sha256
   checked). Do not drop audio into the repo by hand.
-* **Leave `~/Library/Application Support/REAPER` alone** apart from reading
-  `reaper.ini` / the plugin caches and using the bridge mailbox directory.
+* **Leave `~/Library/Application Support/REAPER` alone** apart from using the bridge mailbox directory; the only other
+  Application Support reads are Surge XT's patch folders.
 * **Never work in the user's open project when testing.** Open a new tab
   (`Main_OnCommand(40859, 0)`), do everything there, then
   `Main_SaveProjectEx(0, "/private/tmp/<temp>.rpp", 8)` (the tab adopts the
@@ -142,7 +142,7 @@ when you need to write, correct, or generate a melody.
 * **Bars are 1-based and inclusive.** `--from 1 --to 8` is the first eight
   bars. So is a region reported as `bars 1-8`.
 * Only `scripts/hum_to_grid.py` needs third-party packages
-  (`pip install -e '.[transcribe]'`). Everything else is stdlib.
+  (`uv pip install -e '.[transcribe]'`). Everything else is stdlib.
 
 ### Contributing to the repository itself
 

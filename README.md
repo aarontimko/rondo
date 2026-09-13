@@ -56,7 +56,10 @@ you already have open.
 * **Records and renders.** `record.py` arms a track for the mic or the virtual
   keyboard; `render.py` renders a bar range or a named region to a wav, with no
   dialog; `hum_to_grid.py` turns a hummed take into grid text.
-* **Stays small.** One script per task, stdlib only, no server to run, and
+* **Small moves.** `track.py` mutes, solos, arms, renames, deletes and sets
+  volume one track at a time; `run_lua.py` runs any ReaScript inside the
+  running Reaper and prints its output.
+* **Stays small.** One script per task, stdlib only, no server of its own, and
   `--json` wherever machine output helps.
 
 ## Install
@@ -87,8 +90,21 @@ uvx twelvetake-reaper-mcp --install-bridge
 open -a REAPER ~/"Library/Application Support/REAPER/Scripts/reaper_mcp_bridge.lua"
 ```
 
-If it is not answering, every script that needs Reaper says so and prints that
-command.
+If the bridge is not answering, every script that needs Reaper says so and
+prints the load command.
+
+First run, in order:
+
+1. Install Python 3.11 or newer and [uv](https://docs.astral.sh/uv/); macOS
+   ships an older `python3`, so `uv python install 3.12` is the short way.
+2. Install Reaper, Surge XT and Dexed.
+3. Install the bridge with the `uvx` command above.
+4. Start Reaper and open a project (a new empty one is fine).
+5. Load the bridge with the `open -a REAPER` command above.
+6. `python3 scripts/status.py` should print the tempo and the empty track list.
+7. `python3 scripts/install_samples.py` once, before the first `build_kit.py`.
+
+The docs write `python`; use `python3` if that is what your shell has.
 
 ## Use it
 

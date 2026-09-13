@@ -19,9 +19,9 @@ only the maintainer can see.
 Do not open a public issue, a discussion, or a pull request for a security
 problem. A public report is a disclosure.
 
-If private reporting is unavailable to you, send a direct message to
-[@aarontimko](https://github.com/aarontimko) on GitHub asking for a private
-channel, and say nothing about the issue itself in that message.
+If private reporting is unavailable to you, open an issue titled
+"security contact request" with nothing else in it, and the maintainer will
+reply with a private channel. Say nothing about the issue itself there.
 
 ## What to include
 
@@ -49,7 +49,8 @@ yourself.
 - **Reads** the project that is open in your running Reaper, through Reaper
   itself, plus the files you point a script at: grid text, JSON note files, the
   drum manifest `samples/kit.json`, and the wav you hand `hum_to_grid.py`. It
-  reads Reaper's own resource directory for plugin and preset information.
+  reads Surge XT's factory and user patch folders under Application Support
+  to resolve a patch name.
 - **Writes** MIDI items, tracks, instruments, FX and automation into the open
   Reaper project, track and region names, and Reaper project files when you ask
   for a save. It writes generated ReaScript and its output to a scratch
@@ -67,8 +68,8 @@ yourself.
 - **Reaches the network** in exactly one script: `scripts/install_samples.py`
   downloads the CC0 drum one-shots named in `samples/kit.json` over HTTPS from
   `raw.githubusercontent.com`, at a commit pinned in that manifest, and checks
-  each file's size and SHA-256 against that manifest, reporting the mismatch and
-  exiting nonzero if either disagrees. Nothing else in rondo makes a
+  each file's size and SHA-256 against that manifest; a file that disagrees is
+  deleted, reported, and the script exits nonzero. Nothing else in rondo makes a
   network call. Do not run that script and there is no network call at all.
   `hum_to_grid.py`'s optional dependencies are installed by you, not by rondo.
 

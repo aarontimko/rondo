@@ -31,7 +31,7 @@ the PR what you ran.
 
 ## Tests
 
-The three commands, exactly as `.github/workflows/ci.yml` runs them:
+The three checks `.github/workflows/ci.yml` runs, as commands:
 
 | command | what it runs |
 |---|---|
@@ -81,7 +81,7 @@ the PR. Features do: open an issue describing the problem first.
 
 Never commit audio. No `.wav`, no `.aif`, no `.mp3`, no renders and no samples;
 `.gitignore` covers them and new exceptions are not accepted. Renders belong in
-`/private/tmp`.
+`/private/tmp`, or in the gitignored `render/` directory.
 
 ## Triage
 

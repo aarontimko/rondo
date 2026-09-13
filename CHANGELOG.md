@@ -3,7 +3,7 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 rondo follows [semantic versioning](https://semver.org/) from its first release.
 
-## Unreleased
+## [Unreleased]
 
 Everything below is what `main` carries today. There is no release yet.
 
