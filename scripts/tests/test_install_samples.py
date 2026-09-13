@@ -89,6 +89,7 @@ class TestInstallSamples(unittest.TestCase):
             rc, out = run(["--manifest", str(m)])
         self.assertEqual(rc, 1)
         self.assertIn("SHA256 MISMATCH", out)
+        self.assertFalse((self.tmp / "36_kick.wav").exists())
         self.assertIn("1 PROBLEM", out)
 
     def test_size_mismatch_fails(self):
