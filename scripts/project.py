@@ -36,6 +36,15 @@ SAVE_LUA = r"""
 local AS, INDEX, EXPECT = %(as)s, %(index)d, %(expect)s
 local proj, before = reaper.EnumProjects(INDEX, "")
 if not proj then error("no project tab at index " .. INDEX .. " any more; re-run `project.py tabs`", 0) end
+-- INDEX -1 means "the active tab"; report the tab's real index, not -1.
+local shown = INDEX
+if shown < 0 then
+  local i = 0
+  while reaper.EnumProjects(i, "") do
+    if reaper.EnumProjects(i, "") == proj then shown = i; break end
+    i = i + 1
+  end
+end
 if EXPECT ~= nil and before ~= EXPECT then
   error("tab " .. INDEX .. " is now " .. (before == "" and "(unsaved)" or before)
         .. ", not " .. (EXPECT == "" and "(unsaved)" or EXPECT)
@@ -56,7 +65,7 @@ end
 local _, after = reaper.EnumProjects(INDEX, "")
 local adopted = after ~= "" and after == target
 local dirty = reaper.IsProjectDirty(proj) == 1
-log(jsonenc({ method = method, target = target, tab = INDEX,
+log(jsonenc({ method = method, target = target, tab = shown,
               active = proj == reaper.EnumProjects(-1, ""),
               path_before = before, path_after = after,
               written = reaper.file_exists(target),
