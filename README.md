@@ -25,7 +25,10 @@ compare; "keep number three and delete the rest" promotes the winner. "Make the
 pad swell into the chorus", "try a key change in the bridge", "save this as
 take two and try a faster tempo" are all the same loop: you say what you hear,
 the scripts change the project, and you listen again.
-[`docs/tutorial.md`](docs/tutorial.md) walks through one whole session that way.
+[`docs/tutorial.md`](docs/tutorial.md) walks through one whole session that way,
+and the [theme song](https://github.com/aarontimko/rondo/releases/download/v0.1.0/rondo-theme-song.mp3) on the Releases page is that demo song after an
+hour of getting the volumes right: three and a half minutes, two plucks, a pad
+and drums.
 
 
 ## Who it is for

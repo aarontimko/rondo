@@ -33,7 +33,7 @@ DB_MIN, DB_MAX = -150.0, 24.0
 
 #: `show` never prints more than this many bar boundaries when it is picking
 #: the range itself.
-MAX_SHOW_BARS = 64
+MAX_SHOW_BARS = 256  # a whole song; pass --from/--to for a window
 
 
 def pick(spec: str, names: list[str], flag: str) -> int:
