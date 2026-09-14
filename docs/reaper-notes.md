@@ -221,6 +221,13 @@ Params 17/18 are the velocity range, 5 is pitch `(semitones + 80) / 160`.
 `TrackFX_GetFormattedParamValue` on 3/4 reads back the note **number**, not a
 name. `TrackFX_Show(tr, fx, 2)` closes the floating window the add opens.
 
+**One drum per track when you need a fader.** Velocity on an RS5K note made no
+audible difference on this machine (a 30% cut on the clap was inaudible), so
+the way to balance one drum against the others is a manifest with only that
+note, built onto its own track: `build_kit.py --track Clap --manifest clap.json`
+and the same on `--track Cymbals` for 42/46/49. The theme song ended with
+Drums (kick, snare), Cymbals and Clap as three tracks with three faders.
+
 ## MIDI
 
 ```lua
@@ -313,6 +320,17 @@ Verified against a Surge XT track in a scratch tab.
   point holding the previous value, a ramp drags every earlier bar with it.
 * `Envelope_SortPoints(env)` after inserting with `noSort = true`, then
   `UpdateArrange()`.
+* **A volume envelope is an offset on the fader** in the default Trim/Read
+  automation mode: 0 dB on the envelope means "whatever the fader says".
+  Draw lifts and fades as offsets, never as absolute levels, and keep the
+  fader for the track's overall balance. Verified 2026-09-13 by ear: an
+  envelope redrawn in absolute dB made a track 11 dB too quiet.
+* **`track.py clear-items` does not touch envelopes.** A project reused for a
+  new arrangement keeps every old fade, so a track can go silent for no reason
+  the notes explain. Read `automate.py show` on each track before writing,
+  and `automate.py clear` what the old song left.
+* `automate.py show` prints up to 256 bars from `--from` (default bar 1);
+  `Envelope_Evaluate` past that is the fallback.
 * Useful Surge XT parameter indices on this machine (2858 parameters, so
   resolve by name): 319 `A Filter 1 Cutoff`, 320 `A Filter 1 Resonance`, 237
   `A Volume`, 12 `Global Volume`, 592 `B Filter 1 Cutoff`, 510 `B Volume`.
@@ -320,6 +338,10 @@ Verified against a Surge XT track in a scratch tab.
   so name matching has to refuse ambiguity rather than pick.
 
 ## Rendering
+
+* **Stop the transport before rendering.** Verified 2026-09-13: a render
+  started with `play_state 1` carried a Pad tail into bar 1 that the project
+  does not contain; the same render with the transport stopped was clean.
 
 ```lua
 reaper.GetSetProjectInfo_String(0, "RENDER_FILE", dir, true)
