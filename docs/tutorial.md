@@ -203,3 +203,16 @@ hand, don't revert anything you find") and it will edit around your work.
 render starts leaves its tail in the first bar of the file. Ask for the
 render to a folder git ignores, such as `render/`; audio never goes into the
 repository.
+
+**Listen to the file on the speakers your audience has.** Reaper plays
+through the audio device you chose for it, perhaps good headphones on an
+interface. The rendered file, opened from Finder, plays through the Mac's own
+output, often the laptop speakers. Those cannot reproduce low bass, so a bass
+line that sounds deep in Reaper can sound thin or almost missing in the file,
+and nothing is wrong with the render. If people will hear the song on laptops
+or phones, say so: "the bass disappears on my laptop speakers, can you make it
+carry there without changing the tone?" One answer is a second, quieter bass
+track playing the same notes an octave higher. Then check the file both ways.
+Ask the model to report the peak level of the render too; a mix that touches
+0 dB is clipping, and the fix is to turn the master down a little, not to
+remix.
