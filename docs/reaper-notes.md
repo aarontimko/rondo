@@ -164,6 +164,24 @@ Bare `"Surge XT"`, `"VST3:Surge XT"` and `"CLAP: Surge XT"` also load.
 **HAZARD:** `"AU: Surge XT"` fuzzy-matches the Surge XT *Effects* plugin. Use
 the exact full names.
 
+### Sampled instruments with keyswitches
+
+Verified 2026-09-20 with Ample Bass P Lite (`TrackFX_AddByName(t, "Ample Bass P
+Lite", ...)` loads it; `add_instrument.py` does not know it, so add it from
+Lua).
+
+* **The lowest keys are keyswitches, not notes.** MIDI 24..35 make no sound;
+  each one selects a playing style (sustain, slide, harmonics, ...) and the
+  choice **latches** until another keyswitch arrives. A riff written on MIDI
+  28 was silent, and afterwards every note played in the wrong style until a
+  keyswitch reset it. The open low E string is MIDI 40.
+* Start the item with a short note on MIDI 24 (sustain, the ordinary plucked
+  note) so playback from bar 1 always sets the style.
+* **Leave a gap between repeated notes.** Notes of 0.45 qn on a 0.5 qn grid
+  blurred into one hum; 0.3 qn gave a fresh pluck on every eighth.
+* A render shows whether the plucks are separate: measure the level at the
+  start, peak and end of each note slot. Every slot should rise and decay.
+
 ### Surge patches
 
 Surge ships with `SURGE_EXPOSE_PRESETS` off, so it reports one program and
@@ -366,6 +384,39 @@ Other bounds flags: 1 whole project, 2 time selection, 3 all regions, 5
 selected regions. `RENDER_SETTINGS & 8` enables the region render matrix
 (`SetRegionRenderMatrix` / `EnumRegionRenderMatrix`); not used yet.
 
+### Check the render for clipping
+
+Verified 2026-09-20: a mix that sounded fine in Reaper rendered with a peak of
+exactly 0.0 dBFS and about 1,100 samples at full scale once drums and three
+vocal tracks stacked up. After every render read the wav and report the peak.
+To fix it without touching the balance, set the master fader (`D_VOL` on
+`GetMasterTrack`) to -8 dB, render, read the true peak, then set the master so
+the peak lands near -1 dBFS and render again. A 24-bit render cannot tell you
+how far over it went, which is why the first pass uses a fader that is
+certainly low enough.
+
+### The wav is played on other speakers than the project
+
+Verified 2026-09-20. Reaper sends sound to the audio device chosen in its own
+preferences (an interface with headphones, say). Everything else on the Mac,
+including Finder and QuickTime playing the rendered wav, goes to the system
+output, which is often the laptop speakers. So "the render changed the bass"
+can mean only that the listener changed speakers. Ask what the wav was played
+through before looking for a render fault.
+
+* Laptop and phone speakers reproduce little below about 100 Hz. A bass riff
+  around 65..110 Hz keeps its pluck click and loses its body there; a held
+  low note nearly disappears.
+* If the audience will listen on small speakers, give the bass line content
+  they can play. What worked: a second bass track with the same notes **one
+  octave up**, fader about -8 dB under the main bass. It blends on good
+  headphones and carries the riff on a laptop. Then turn both bass tracks
+  down together (1.5 dB here) because the pair is louder than one.
+* Distortion on the bass also adds playable harmonics, and is the usual metal
+  answer, but at 16 dB drive / 40 % wet the user called it far too much.
+  Offer the clean octave first.
+* Judge the final wav on both: the good headphones and the small speakers.
+
 ## Recording
 
 `I_RECINPUT` encodes the input: an audio mono input is just its index (`0` =
@@ -385,6 +436,42 @@ the active tab, opening a new tab (`40859`) and reading `40364` there gives 0;
 closing that tab and reading again in the original gives 1. So `record.py`'s
 and `project.py metronome`'s reading is about the tab you are in, and a scratch
 tab cannot leave the user's metronome flipped.
+
+### Recording a voice through an interface
+
+Verified 2026-09-20 with a USB interface and a large-diaphragm condenser mic.
+
+* `GetAudioDeviceInfo("IDENT_IN", "")` and `("SRATE", "")` say which device and
+  sample rate Reaper is really using. An interface may come up at 192 kHz;
+  48 kHz is plenty. The user changes it in Preferences, Audio, Device.
+* **No signal on an armed track:** `Track_GetPeakInfo` near 0.003 (-50 dB)
+  while the user is singing means nothing is arriving. Walk through the
+  hardware in order: cable in the input the track listens to, instrument
+  switch off, gain up, and 48V phantom power on if the mic is a condenser
+  (dynamic mics do not need it).
+* Once the interface is Reaper's device, **Reaper's sound comes out of the
+  interface**, so headphones go into the interface, not the laptop.
+* Recording plays the other tracks while it records the armed one. On
+  headphones the mic hears only the voice. Repeat takes stack on the track.
+* To measure a take, read its source wav: peak level, the level in the gaps,
+  and syllable onsets against the beat grid. A take with peaks near -10 dBFS
+  and gaps near -60 dBFS is healthy; if the gap level is the same with and
+  without the band playing, the noise is the room, not headphone bleed.
+* A condenser hears the whole room. **A compressor and distortion raise that
+  room noise** by 10 dB or more, so put a gate first in the chain. ReaGate at
+  -42 dB threshold, 1 ms attack, 60 ms hold, 120 ms release sat cleanly
+  between a -60 dB room and a -25 dB voice. Singing 10..15 cm from the mic
+  behind a pop filter, with the gain turned down, improves it at the source.
+* The chain that worked for shouted vocals: ReaGate, ReaComp (-20 dB, 5:1),
+  JS Distortion (12 dB, 35 % wet, channel mode Stereo: it defaults to Left),
+  ReaVerbate (small room, wet -14 dB, high-pass 300 Hz).
+* **Doubling is a second performance, not a copy.** One track per take, the
+  same FX chain copied with `TrackFX_CopyToTrack`, panned about 35 % left,
+  centre, 35 % right. Disarm the finished track but leave it playing so the
+  singer can match it.
+* Setting a plugin parameter to a displayed value: step the normalized value
+  and compare `TrackFX_GetFormattedParamValue` until it matches. Normalized
+  values are not linear in dB or ms.
 
 ## Humming
 
